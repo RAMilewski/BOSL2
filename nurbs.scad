@@ -197,7 +197,7 @@ function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",
               "Cannot give degree, mult, weights or knots when you provide a NURBS parameter list")
        nurbs_curve(control[2], control[1], splinesteps, u, weights=control[5],mult=control[4], type=control[0], knots=control[3])
   : assert(num_defined([splinesteps,u])==1, "Must define exactly one of u and splinesteps")
-    is_finite(u) ? nurbs_curve(control,degree,u=[u],mult,weights,type=type)[0]
+    is_finite(u) ? nurbs_curve(control,degree,u=[u],mult=mult,weights=weights,knots=knots,type=type)[0]
   : assert(is_undef(splinesteps) || (is_int(splinesteps) && splinesteps>0), "splinesteps must be a positive integer")
     let(u=is_range(u) ? list(u) : u)                  
     assert(is_undef(u) || (is_vector(u) && min(u)>=0 && max(u)<=1), "u must be a list of points on the interval [0,1] or a range contained in that interval")
@@ -229,11 +229,12 @@ function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",
                                           "where degree+1 is allowed.  The mult vector has bad values at indices: ",badmult))
                   assert(is_undef(knots) || is_undef(mult) || len(mult)==len(knots), "If both mult and knots are given they must be vectors of the same length")
                   assert(is_undef(mult) || type!="clamped" || sum(mult)==len(control)-degree+1,
-                         str("For ",type," spline knot count (sum of multiplicity vector) must be ",len(control)-degree+1," but is instead ",mult?sum(mult):0))
+                         str("For clamped spline knot count (sum of multiplicity vector) must be ",len(control)-degree+1," but is instead ",mult?sum(mult):0))
                   assert(is_undef(mult) || type!="closed" || sum(mult)==len(control)+1,
                          str("For closed spline knot count (sum of multiplicity vector) must be ",len(control)+1," but is instead ",mult?sum(mult):0))
                   assert(is_undef(mult) || type!="open" || sum(mult)==len(control)+degree+1,
-                         str("For closed spline knot count (sum of multiplicity vector) must be ",len(control)+degree+1," but is instead ",mult?sum(mult):0)),
+                         str("For open spline knot count (sum of multiplicity vector) must be ",len(control)+degree+1," but is instead ",mult?sum(mult):0))
+                  assert(uniform || is_increasing(knots), "Knot vector must be increasing"),
          control = type=="open" ? control
                  : type=="clamped" ? control  //concat(repeat(control[0], degree),control, repeat(last(control),degree))
                  : /*type=="closed"*/ concat(control, select(control,count(degree))),
@@ -267,7 +268,7 @@ function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",
               : type=="clamped" ? assert(len(xknots) == len(control)+1-degree, str("For clamped spline of degree ",degree,", knot vector with multiplicity must have length ",
                                                                         len(control)+1-degree," but has length ", len(xknots)))
                                   assert(xknots[0]!=xknots[1] && last(xknots)!=select(xknots,-2),
-                                         "For clamped splint, first and last knots cannot repeat (must have multiplicity one")
+                                         "For clamped spline, first and last knots cannot repeat (must have multiplicity one")
                                   concat(repeat(xknots[0],degree), xknots, repeat(last(xknots),degree))
               : /*type=="closed"*/ assert(len(xknots) == len(control)+1-degree,  str("For closed spline, knot vector (including multiplicity) must have length ",
                                                                         len(control)+1-degree," but has length ", len(xknots),control))
@@ -279,7 +280,7 @@ function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",
          adjusted_u = !is_undef(splinesteps) ?
                          [for(i=[degree:1:len(control)-1])
                            each 
-                             if (knot[i]!=knot[i+1])
+                             if (!approx(knot[i],knot[i+1]))
                                lerpn(knot[i],knot[i+1],splinesteps, endpoint=false),
                           if (type!="closed") knot[len(control)]
                          ]
@@ -356,7 +357,7 @@ function _calc_mult(knots) =
   let(
       ind=[ 0,
             for(i=[1:len(knots)-1])
-              if (knots[i]!=knots[i-1]) i,
+              if (!approx(knots[i],knots[i-1])) i,
             len(knots)
           ]
   )

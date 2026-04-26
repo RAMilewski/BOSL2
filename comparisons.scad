@@ -996,8 +996,10 @@ function group_data(groups, values) =
 //   list = list to process
 //   k = number of items to return
 function list_smallest(list, k) =
-    assert(is_list(list))
     assert(is_int(k) && k>=0, "k must be nonnegative")
+    assert(is_list(list) && len(list)>=k)
+    k==0 ? []
+  :
     let( 
         v       = list[rand_int(0,len(list)-1,1)[0]],
         smaller = [for(li=list) if(li<v) li ],
@@ -1009,6 +1011,34 @@ function list_smallest(list, k) =
     let( bigger  = [for(li=list) if(li>v) li ] )
     concat(smaller, equal, list_smallest(bigger, k-len(smaller) -len(equal)));
 
+
+// Function: list_largest()
+// Synopsis: Returns the `k` largest values in the list, in arbitrary order.
+// Topics: List Handling
+// See Also: group_sort(), shuffle(), sort(), sortidx(), unique(), unique_count(), list_smallest()
+// Usage:
+//   big = list_biggest(list, k)
+// Description:
+//   Returns a set of the k largest items in list in arbitrary order.  The items must be
+//   mutually comparable with native OpenSCAD comparison operations.
+//   You get "undefined operation" errors if you provide invalid input. 
+// Arguments:
+//   list = list to process
+//   k = number of items to return
+function list_largest(list, k) =
+    assert(is_int(k) && k>=0, "k must be nonnegative")
+    assert(is_list(list) && len(list)>=k)
+    k==0 ? []
+  : let(
+        v       = list[rand_int(0,len(list)-1,1)[0]],
+        bigger = [for(li=list) if(li>v) li ],
+        equal   = [for(li=list) if(li==v) li ]
+    )
+    len(bigger)   == k ? bigger :
+    len(bigger)<k && len(bigger)+len(equal) >= k ? [ each bigger, for(i=[1:k-len(bigger)]) v ] :
+    len(bigger)   >  k ? list_largest(bigger, k) :
+    let( smaller  = [for(li=list) if(li<v) li ] )
+    concat(bigger, equal, list_largest(smaller, k-len(bigger) -len(equal)));
 
 
 // vim: expandtab tabstop=4 shiftwidth=4 softtabstop=4 nowrap
