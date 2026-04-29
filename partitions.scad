@@ -1114,7 +1114,7 @@ function ptn_sect(type, length=25, width=25, invert=false) =
 // Topics: Partitions, Masking, Paths
 // See Also: ptn_sect(), partition_cut_mask(), partition()
 // Usage:
-//   path = partition_path(pathdesc, [repeat=], [y=], [altpath=], [seglen=], [segwid=]);
+//   path = partition_path(pathdesc, [repeat=], [y=], [altpath=], [seglen=], [segwidth=]);
 // Description:
 //   Creates a partition path based on a list of section descriptors, as would be passed to {{ptn_sect()}}.
 // Arguments:
@@ -1124,7 +1124,7 @@ function ptn_sect(type, length=25, width=25, invert=false) =
 //   y = If given, closes the generated path by connecting its ends at this Y coordinate, and orients the closed path based on the sign of `y`.
 //   altpath = Optional alternate base path which the generated partition pattern will be aligned to.  Default: `[[-9999,0], [+9999,0]]`
 //   seglen = Default length for named string segments that do not specify their own size.  Default: 25
-//   segwid = Default width for named string segments that do not specify their own size.  Default: 25
+//   segwidth = Default width for named string segments that do not specify their own size.  Default: 25
 // Example(2D): You can {{stroke()}} an unclosed partition path with a given width= to make a wall that you can use to divide a part into two pieces.
 //   linear_extrude(height=100)
 //       stroke(
@@ -1179,14 +1179,14 @@ function ptn_sect(type, length=25, width=25, invert=false) =
 //               )
 //           );
 
-function partition_path(pathdesc, repeat=1, y, altpath, seglen, segwid) =
+function partition_path(pathdesc, repeat=1, y, altpath, seglen, segwidth) =
     let(
         paths = [
             for (n = [0:1:repeat-1])
             for (pd = pathdesc)
             is_path(pd)? pd :
             is_num(pd)? ptn_sect(pd) :
-            is_string(pd)? ptn_sect(pd, length=default(seglen,25), width=default(segwid,25)) :
+            is_string(pd)? ptn_sect(pd, length=default(seglen,25), width=default(segwidth,25)) :
             assert(false, str("Path descriptor '",pd,"' is invalid."))
         ],
         xes = [for (path = paths) column(path,0)],
