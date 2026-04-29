@@ -904,118 +904,30 @@ module partition(size=100, spread=10, cutsize=10, cutpath="jigsaw", gap=0, cutpa
 }
 
 
-// Module: ptn_sect()
-// Synopsis: Creates a partition path section from a description.
-// SynTags: Path
-// Topics: Partitions, Masking, Paths
-// See Also: partition_path(), partition_cut_mask(), partition()
-// Usage:
-//   path = ptn_sect(type, [length], [width], [invert=]);
-// Description:
-//   Creates a partition path section based on a name or description.  The result is intended to be fed to {{partition_path()}}.
-//   If the `type=` argument is given as a scalar, the pattern returned will be for a "flat" section of that given length.
-//   If the `type=` argument is given as a 2D path, the pattern returned will be scaled from the input path by length= and width=.
-//   If the `type=` argument is given as a string, it is expected to be the name of a standard section pattern:
-//   Accepted section pattern names are:
-//   - `"flat"`: A flat section.
-//   - `"sawtooth"`: A sawtooth halfwave, with the peak to the left.
-//   - `"square"`: A square halfwave.
-//   - `"triangle"`: A triangular halfwave, with the peak in the center.
-//   - `"halfsine"`: Half of a sine-wave.
-//   - `"semicircle"`: The top half of a circle.
-//   - `"sinewave"`: A full sine wave.
-//   - `"comb"`: A modified square halfwave, with walls at a 2° angle.
-//   - `"finger"`: A modified square halfwave with walls at a 20° angle.
-//   - `"dovetail"`: A modified square halfwave with walls dovetailed out by 9°.
-//   - `"hammerhead"`: A shape useful for making T-slots.
-//   - `"jigsaw"`: The classic interlocking jigsaw puzzle tab shape.
-//   Section pattern names can be suffixed by one or more modifiers, separated by spaces.  Accepted modifier forms are:
-//   - `"<SHAPE> 3x"`: repeats the shape 3 times.
-//   - `"<SHAPE> 20x30"`: Resize the shape to be 20x30 in size.
-//   - `"<SHAPE> xflip"`: Mirrors the shape along the X axis.
-//   - `"<SHAPE> yflip"`: Mirrors the shape along the Y axis.
-//   - `"<SHAPE> addflip"`: Equivalent to a combination of "<SHAPE>" and "<SHAPE> xflip yflip".
-//   - `"<SHAPE> wave"`: Same as "<SHAPE> addflip".
-//   - `"<SHAPE> skew:15"`: Skews the shape by 15 degrees.
-//   - `"<SHAPE> pinch:33"` or `"<SHAPE> pinch:33%"`: Pinches the top of the shape to 33% the width of the bottom.  Valid range is 0–200.  At 0 the top collapses to a point; at 100 the shape is unchanged; at 200 the top flares to double the width.
-//   - `"<SHAPE> pinch:20deg"`: Pinches the top of the shape by angling each wall inward by 20°.  Negative angles flare the walls outward.  Errors if the angle would cause the walls to cross.
-//   - `"flat 40"`: A flat section of explicit length 40 (equivalent to placing the scalar `40` in a `pathdesc` list).
-//   Modifiers are processed left to right in order.
-//   If `invert=true`, behaves as if a " yflip" modifier was added to the end.
-// Arguments:
-//   type = The general description of the partition path section.  This can be a string name, a 2D path, or a scalar length for a flat section.  Valid names are listed in the section description above.
-//   length = The X axis length of the section. Default: 25
-//   width = The Y axis length of the section. Default: 25
-//   ---
-//   invert = If true, the returned section is flipped back-to-front.  Default: false
-// Examples(2D):
-//   stroke(ptn_sect("flat"));
-//   stroke(ptn_sect("sawtooth"));
-//   stroke(ptn_sect("square"));
-//   stroke(ptn_sect("triangle"));
-//   stroke(ptn_sect("halfsine", $fn=24));
-//   stroke(ptn_sect("semicircle", $fn=24));
-//   stroke(ptn_sect("comb"));
-//   stroke(ptn_sect("finger"));
-//   stroke(ptn_sect("dovetail"));
-//   stroke(ptn_sect("hammerhead"));
-//   stroke(ptn_sect("jigsaw", $fn=24));
-// Example(2D): Giving length and width arguments scales the shape differently.
-//   stroke(ptn_sect("jigsaw", length=40, width=20, $fn=36));
-// Example(2D): Giving invert=true will flip the pattern front-to-back
-//   stroke(ptn_sect("jigsaw", invert=true, $fn=36));
-// Example(2D): Suffixing the name with `" yflip"` will also flip the pattern front-to-back.
-//   stroke(ptn_sect("hammerhead yflip"));
-// Example(2D): Suffixing the name with `" xflip"` will reverse the pattern left-to-right.
-//   stroke(ptn_sect("sawtooth xflip"));
-// Example(2D): Suffixing the name with `" addflip"` will construct a full wave pattern from the named halfwave pattern.
-//   stroke(ptn_sect("sawtooth addflip"));
-// Example(2D): Suffixing the name with a string like `" 5x"` will construct 5 repetitions of the pattern.
-//   stroke(ptn_sect("sawtooth 5x"));
-// Example(2D): Suffixing the name with a string like `" 40x20"` will scale the pattern to a size of 40 by 20.  By default a pattern will be 25 by 25 in size.
-//   stroke(ptn_sect("jigsaw 40x20"));
-// Example(2D): You can add multiple space delimited suffixes to apply multiple effects.
-//   stroke(ptn_sect("halfsine addflip yflip 40x30 3x"));
-// Example(2D): Suffix ordering can matter, since they are applied in order.
-//   stroke(ptn_sect("halfsine 3x addflip yflip 40x30"));
-// Example(2D): Giving a scalar is a shortcut for a "flat" section of the given length.
-//   stroke(ptn_sect(30));
-// Example(2D): You can also specify a flat section as a string with `"flat LENGTH"`, which is useful in contexts that only accept strings.
-//   stroke(ptn_sect("flat 30"));
-// Example(2D): Suffixing the name with a string like `" skew:15"` will skew the waveform by 15 degrees.
-//   stroke(ptn_sect("square skew:15"));
-// Example(2D): Suffixing the name with a string like `" pinch:30"` will pinch the top of the waveform in to 30% of the size of the bottom.
-//   stroke(ptn_sect("square pinch:30"));
-// Example(2D): You can also specify pinch as a wall angle using the `deg` suffix.  Positive angles pinch inward; negative angles flare outward.
-//   stroke(ptn_sect("square pinch:20deg"));
-// Example(2D): A negative `deg` angle flares the walls outward, giving a dovetail-like profile.
-//   stroke(ptn_sect("square pinch:-9deg"));
-// Example(2D): Using a custom section shape.  Input is expected to start at `[0,0]`, and end at `[1,0]`.  It is scaled by length= and width=.
-//   cust_path = yscale(2, p=arc(n=15, r=0.5, cp=[0.5,0], start=180, angle=-180));
-//   stroke(ptn_sect(cust_path, length=40, width=30));
+// Internal helper: builds one segment of a partition path.
 
-function ptn_sect(type, length=25, width=25, invert=false) =
+function _ptn_sect(type, length=25, width=25, invert=false) =
     // NOTE: these patterns are NOT quite the same as those in _partition_subpath().
     // They are positioned and sometimes formed differently for better alignment, though
     // the overall shapes are nearly the same.
     is_num(type)? assert(is_finite(type) && type>0) [[0,0], [type,0]] :
-    invert? yscale(-1, p=ptn_sect(type, length, width)) :
+    invert? yscale(-1, p=_ptn_sect(type, length, width)) :
     is_string(type) && str_find(type, " ") != undef
       ? let(
             pos = str_find(type, " ", last=true),
             opt = substr(type, pos+1),
             type = substr(type, 0, pos)
         )
-        opt == "yflip"? yscale(-1, p=ptn_sect(type, length, width)) :
+        opt == "yflip"? yscale(-1, p=_ptn_sect(type, length, width)) :
         opt == "xflip"? let(
-                sect = ptn_sect(type, length, width),
+                sect = _ptn_sect(type, length, width),
                 bounds = pointlist_bounds(sect),
                 xpos = (bounds[1].x + bounds[0].x) / 2,
                 rsect = reverse(xflip(x=xpos, p=sect))
             ) rsect :
         opt == "addflip" || opt == "wave"? let(
-                sect1 = ptn_sect(type, length, width),
-                sect2 = ptn_sect(str(type, " yflip xflip"), length, width),
+                sect1 = _ptn_sect(type, length, width),
+                sect2 = _ptn_sect(str(type, " yflip xflip"), length, width),
                 bounds1 = pointlist_bounds(sect1),
                 bounds2 = pointlist_bounds(sect2),
                 m1 = scale(0.5) * left(bounds1[0].x),
@@ -1029,7 +941,7 @@ function ptn_sect(type, length=25, width=25, invert=false) =
                 reps = parse_int(repstr),
                 checks =
                     assert(is_finite(reps) && reps>0, "Repetition option expected to be in the form COUNTx.  ie: \"3x\""),
-                sect = ptn_sect(type, length, width),
+                sect = _ptn_sect(type, length, width),
                 w = last(sect).x,
                 osect = path_merge_collinear([
                     for (i = [0:1:reps-1])
@@ -1043,7 +955,7 @@ function ptn_sect(type, length=25, width=25, invert=false) =
                 checks =
                     assert(len(parts) == 2, "Size option expected to be in the form LENGTHxWIDTH.  ie: \"30x25\"")
                     assert(is_finite(length) && is_finite(width) && length>0 && width>0, "Size option expected to be in the form LENGTHxWIDTH.  ie: \"30x25\""),
-                sect = ptn_sect(type, length, width)
+                sect = _ptn_sect(type, length, width)
             ) sect :
         len(opt)>5 && starts_with(opt, "skew:") && (is_digit(opt[5]) || (opt[5]=="-" && is_digit(opt[6])))? let(  // skew:15 (Skewing)
                 parts = str_split(opt, ":"),
@@ -1051,7 +963,7 @@ function ptn_sect(type, length=25, width=25, invert=false) =
                 checks =
                     assert(len(parts) == 2, "Skew option expected to be in the form skew:DEGREES.  ie: \"skew:15\"")
                     assert(is_finite(angle) && angle>=-45 && angle<=45, "Bad skew option."),
-                raw_sect = ptn_sect(type, length, width),
+                raw_sect = _ptn_sect(type, length, width),
                 sect = skew(axy=angle, p=raw_sect)
             ) sect :
         len(opt)>6 && starts_with(opt, "pinch:") && (is_digit(opt[6]) || (opt[6]=="-" && len(opt)>7 && is_digit(opt[7])))? let(  // pinch:50 / pinch:50% (percent) / pinch:20deg (angle)
@@ -1062,7 +974,7 @@ function ptn_sect(type, length=25, width=25, invert=false) =
                           is_pct? substr(val_str, 0, len(val_str)-1) :
                           val_str,
                 val = parse_float(num_str),
-                raw_sect = ptn_sect(type, length, width),
+                raw_sect = _ptn_sect(type, length, width),
                 minx = min([for (p = raw_sect) p.x]),
                 maxx = max([for (p = raw_sect) p.x]),
                 w_half = (maxx - minx) / 2,
@@ -1084,7 +996,7 @@ function ptn_sect(type, length=25, width=25, invert=false) =
                 checks = assert(is_finite(flat_len) && flat_len > 0, "Flat length option expected to be a positive number.")
             ) [[0,0], [flat_len, 0]] :
         assert(false, str("Bad section option: '",opt,"'"))
-      : type == "sinewave"? ptn_sect("halfsine addflip", length, width)
+      : type == "sinewave"? _ptn_sect("halfsine addflip", length, width)
       : let(
             steps = segs(length/2),
             path =
@@ -1112,19 +1024,88 @@ function ptn_sect(type, length=25, width=25, invert=false) =
 // Synopsis: Creates a partition path from a path description.
 // SynTags: Path
 // Topics: Partitions, Masking, Paths
-// See Also: ptn_sect(), partition_cut_mask(), partition()
+// See Also: partition_cut_mask(), partition()
 // Usage:
 //   path = partition_path(pathdesc, [repeat=], [y=], [altpath=], [seglen=], [segwidth=]);
 // Description:
-//   Creates a partition path based on a list of section descriptors, as would be passed to {{ptn_sect()}}.
+//   Creates a partition path from a list of segment descriptors.  Each item in `pathdesc` can be:
+//   - A numeric scalar: a flat section of that length.
+//   - A 2D path: used directly as a segment (no scaling is applied).
+//   - A string: the name of a standard section pattern, optionally followed by space-separated modifiers.
+//   .
+//   Standard section pattern names are:
+//   - `"flat"`: A flat section.
+//   - `"sawtooth"`: A sawtooth halfwave, with the peak to the left.
+//   - `"square"`: A square halfwave.
+//   - `"triangle"`: A triangular halfwave, with the peak in the center.
+//   - `"halfsine"`: Half of a sine-wave.
+//   - `"semicircle"`: The top half of a circle.
+//   - `"sinewave"`: A full sine wave.
+//   - `"comb"`: A modified square halfwave, with walls at a 2° angle.
+//   - `"finger"`: A modified square halfwave with walls at a 20° angle.
+//   - `"dovetail"`: A modified square halfwave with walls dovetailed out by 9°.
+//   - `"hammerhead"`: A shape useful for making T-slots.
+//   - `"jigsaw"`: The classic interlocking jigsaw puzzle tab shape.
+//   .
+//   Section pattern names can be suffixed by one or more modifiers, separated by spaces.  Accepted modifier forms are:
+//   - `"<SHAPE> 3x"`: repeats the shape 3 times.
+//   - `"<SHAPE> 20x30"`: Resize the shape to be 20x30 in size.  By default a pattern will be 25 by 25 in size.
+//   - `"<SHAPE> xflip"`: Mirrors the shape along the X axis.
+//   - `"<SHAPE> yflip"`: Mirrors the shape along the Y axis.
+//   - `"<SHAPE> addflip"`: Equivalent to a combination of "<SHAPE>" and "<SHAPE> xflip yflip".
+//   - `"<SHAPE> wave"`: Same as "<SHAPE> addflip".
+//   - `"<SHAPE> skew:15"`: Skews the shape by 15 degrees.
+//   - `"<SHAPE> pinch:33"` or `"<SHAPE> pinch:33%"`: Pinches the top of the shape to 33% the width of the bottom.  Valid range is 0–200.  At 0 the top collapses to a point; at 100 the shape is unchanged; at 200 the top flares to double the width.
+//   - `"<SHAPE> pinch:20deg"`: Pinches the top of the shape by angling each wall inward by 20°.  Negative angles flare the walls outward.  Errors if the angle would cause the walls to cross.
+//   - `"flat 40"`: A flat section of explicit length 40 (equivalent to placing the scalar `40` in a `pathdesc` list).
+//   Modifiers are processed left to right in order.
 // Arguments:
-//   pathdesc = A list describing one or more partition path segments. Each item is either a numeric length, a string naming a segment pattern as would be passed to {{ptn_sect()}}, or a full explicit path.
+//   pathdesc = A list of segment descriptors.  Each item is a numeric length (flat section), a 2D path (used as-is), or a string pattern name with optional space-separated modifiers (see Description).
 //   ---
 //   repeat = Number of times to repeat the full `pathdesc` sequence along the path.  Default: 1
 //   y = If given, closes the generated path by connecting its ends at this Y coordinate, and orients the closed path based on the sign of `y`.
 //   altpath = Optional alternate base path which the generated partition pattern will be aligned to.  Default: `[[-9999,0], [+9999,0]]`
 //   seglen = Default length for named string segments that do not specify their own size.  Default: 25
 //   segwidth = Default width for named string segments that do not specify their own size.  Default: 25
+// Examples(2D): Standard section shapes.
+//   stroke(partition_path(["flat"]), width=3);
+//   stroke(partition_path(["sawtooth"]), width=3);
+//   stroke(partition_path(["square"]), width=3);
+//   stroke(partition_path(["triangle"]), width=3);
+//   stroke(partition_path(["halfsine"], $fn=24), width=3);
+//   stroke(partition_path(["semicircle"], $fn=24), width=3);
+//   stroke(partition_path(["comb"]), width=3);
+//   stroke(partition_path(["finger"]), width=3);
+//   stroke(partition_path(["dovetail"]), width=3);
+//   stroke(partition_path(["hammerhead"]), width=3);
+//   stroke(partition_path(["jigsaw"], $fn=24), width=3);
+// Example(2D): Sizing a shape with a `WxH` modifier.
+//   stroke(partition_path(["jigsaw 40x20"], $fn=36), width=3);
+// Example(2D): Flipping a shape front-to-back with `yflip`.
+//   stroke(partition_path(["hammerhead yflip"]), width=3);
+// Example(2D): Reversing a shape left-to-right with `xflip`.
+//   stroke(partition_path(["sawtooth xflip"]), width=3);
+// Example(2D): Building a full wave with `addflip`.
+//   stroke(partition_path(["sawtooth addflip"]), width=3);
+// Example(2D): Repeating a shape with `Nx`.
+//   stroke(partition_path(["sawtooth 5x"]), width=3);
+// Example(2D): Combining multiple modifiers.
+//   stroke(partition_path(["halfsine addflip yflip 40x30 3x"]), width=3);
+// Example(2D): A numeric entry is a flat section of that length.
+//   stroke(partition_path([30]), width=3);
+// Example(2D): `"flat N"` is equivalent and more readable in mixed lists.
+//   stroke(partition_path(["flat 30"]), width=3);
+// Example(2D): Skewing a shape.
+//   stroke(partition_path(["square skew:15"]), width=3);
+// Example(2D): Pinching a shape by percentage.
+//   stroke(partition_path(["square pinch:30"]), width=3);
+// Example(2D): Pinching a shape by wall angle — positive angles narrow the top.
+//   stroke(partition_path(["square pinch:20deg"]), width=3);
+// Example(2D): Negative `deg` angles flare the top wider.
+//   stroke(partition_path(["square pinch:-9deg"]), width=3);
+// Example(2D): You can pass a 2D path directly as a segment; it is used as-is (no scaling).
+//   cust_path = scale([40,30], p=yscale(2, p=arc(n=15, r=0.5, cp=[0.5,0], start=180, angle=-180)));
+//   stroke(partition_path([cust_path]), width=3);
 // Example(2D): You can {{stroke()}} an unclosed partition path with a given width= to make a wall that you can use to divide a part into two pieces.
 //   linear_extrude(height=100)
 //       stroke(
@@ -1153,7 +1134,7 @@ function ptn_sect(type, length=25, width=25, invert=false) =
 //           polygon(
 //               partition_path([
 //                       40, "jigsaw", 10, "jigsaw yflip", 40,
-//                       ptn_sect("hammerhead", length=30, width=20),
+//                       "hammerhead 30x20",
 //                       40, "jigsaw yflip", 10, "jigsaw", 40,
 //                   ],
 //                   y=150,
@@ -1185,8 +1166,8 @@ function partition_path(pathdesc, repeat=1, y, altpath, seglen, segwidth) =
             for (n = [0:1:repeat-1])
             for (pd = pathdesc)
             is_path(pd)? pd :
-            is_num(pd)? ptn_sect(pd) :
-            is_string(pd)? ptn_sect(pd, length=default(seglen,25), width=default(segwidth,25)) :
+            is_num(pd)? _ptn_sect(pd) :
+            is_string(pd)? _ptn_sect(pd, length=default(seglen,25), width=default(segwidth,25)) :
             assert(false, str("Path descriptor '",pd,"' is invalid."))
         ],
         xes = [for (path = paths) column(path,0)],
