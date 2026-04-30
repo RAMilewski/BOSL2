@@ -69,7 +69,7 @@ _BOSL2_NURBS = is_undef(_BOSL2_STD) && (is_undef(BOSL2_NO_STD_WARNING) || !BOSL2
 //   use it to evaluate the NURBS over its entire domain by giving a splinesteps value.  This specifies the number of segments
 //   to use between each knot and guarantees a point exactly at each knot.  This may be important if you set the knot multiplicity
 //   to the degree somewhere in your curve, which creates a corner at the knot, because it guarantees a sharp corner regardless
-//   of the number of points.  If you don't give `u` or `splinesteps` then `splinesteps=16` is used as the default evaluation.  
+//   of the number of points.  If you don't give `u` or `splinesteps` then `splinesteps=16` is used as the default evaluation.
 //   .
 //   Instead of providing separate parameters you can give a first parameter of the form of a NURBS parameter list: `[type, degree, control, knots, mult, weights]`.  
 // Arguments:
@@ -179,7 +179,7 @@ _BOSL2_NURBS = is_undef(_BOSL2_STD) && (is_undef(BOSL2_NO_STD_WARNING) || !BOSL2
 //   control = [[1,0],[1,2],[-1,2],[-1,0]];
 //   w = [1,1/3,1/3,1];
 //   debug_nurbs(control, 3, weights=w, width=0.1, size=.2);
-// Example(2D,NoAxes): Gluing two semi-circles together gives a whole circle.  Note that this is a clamped not closed NURBS.  The interface uses a knot of multiplicity 3 where the clamped ends of the semi-circles meet. 
+// Example(2D,NoAxes): Gluing two semi-circles together gives a whole circle.  Note that this is a clamped not a closed NURBS.  The interface uses a knot of multiplicity 3 where the clamped ends of the semi-circles meet. 
 //   control = [[1,0],[1,2],[-1,2],[-1,0],[-1,-2],[1,-2],[1,0]];
 //   w = [1,1/3,1/3,1,1/3,1/3,1];
 //   debug_nurbs(control, 3, splinesteps=16,weights=w,mult=[1,3,1],width=.1,size=.2);
@@ -338,6 +338,622 @@ function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",
          )
          reorder ? select(nurbs_pts,reorder[1]) : nurbs_pts;
 
+
+       
+
+function _nurbs_pt(knot, control, u, r, p, k) = 
+    r>p ? control[0]
+  :                          
+    let( 
+         ctrl_new = [for(i=[k-p+r:1:k])
+                       let(
+                            alpha = (u-knot[i]) / (knot[i+p-r+1]-knot[i])
+                       )
+                       (1-alpha) * control[i-1-(k-p)-r+1] + alpha*control[i-(k-p)-r+1]
+                    ]
+    )
+    _nurbs_pt(knot,ctrl_new,u,r+1,p,k);
+
+
+function _extend_knot_mult(mult, next, len) =
+    let(total = sum(mult))
+    total == len ? mult
+  : total>len ? [ each select(mult,0,-2), last(mult)-(total-len) ]
+  : _extend_knot_mult([each mult,mult[next]], next+1, len);
+
+function _extend_knot_vector(knots,next,len) =
+    len(knots)==len ? knots
+  : _extend_knot_vector([each knots, last(knots)+knots[next+1]-knots[next]], next+1, len);
+
+
+function _calc_mult(knots) =
+  let(
+      ind=[ 0,
+            for(i=[1:len(knots)-1])
+              if (!approx(knots[i],knots[i-1])) i,
+            len(knots)
+          ]
+  )
+  deltas(ind);
+
+
+// Module: debug_nurbs()
+// Synopsis: Shows a NURBS curve and its control points, knots and weights
+// SynTags: Geom
+// Topics: NURBS, Debugging
+// See Also: nurbs_curve()
+// Usage:
+//   debug_nurbs(control, degree, [width], [splinesteps=], [type=], [mult=], [knots=], [size=], [show_weights=], [show_knots=], [show_idx=]);
+// Description:
+//   Displays a 2D or 3D NURBS and the associated control points to help debug NURBS curves.  You can display the
+//   control point indices and weights, and can also display the knot points.
+//   Instead of providing separate parameters you can give a first parameter of the form of a NURBS parameter list: `[type, degree, control, knots, mult, weights]`.  
+// Arguments:
+//   control = list of control points in any dimension or a NURBS parameter list
+//   degree = degree of NURBS
+//   splinesteps = number of segments between each pair of knots.  Default: 16
+//   width = width of the line.  Default: 1
+//   size = size of text annotations.  Default: 3 times the width
+//   mult = multiplicity vector for NURBS
+//   weights = weight vector for NURBS
+//   type = NURBS type, one of "clamped", "open" or "closed".  Default: "clamped"
+//   show_index = if true then display index of each control point vertex.  Default: true
+//   show_weights = if true then display any non-unity weights.  Default: true if weights vector is supplied, false otherwise
+//   show_knots = If true then show the knots on the spline curve.  Default: false
+//   show_control = If true then show the control points and its polygon.  Default: true
+//
+//       nurbs_curve(nurbs_interp(data, 3, start_deriv=[0,1]), splinesteps=32),
+//
+// Example(2D,Med,NoAxes): If you want to see the knots set `show_knots=true`:
+//   pts = [[5,0],[0,20],[33,43],[37,88],[60,62],[44,22],[77,44],[79,22],[44,3],[22,7]];
+//   debug_nurbs(pts,4,type="clamped",show_knots=true);
+//
+// Example(2D,Med,NoAxes): Non-unity weights are displayed if you give a weight vector
+//   pts = [[5,0],[0,20],[33,43],[37,88],[60,62],[44,22],[77,44],[79,22],[44,3],[22,7]];
+//   weights = [1,1,1,7,1,1,7,1,1,1];
+//   debug_nurbs(pts,4,type="closed",weights=weights);
+//
+
+module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,type="clamped",knots, show_weights, show_knots=false, show_index=true, show_control=true)
+{
+  if (is_list(control) && in_list(control[0], ["closed","open","clamped"])) {
+    assert(len(control)>=6, "Invalid NURBS parameter list")
+    assert(num_defined([degree,mult,weights,knots])==0,
+           "Cannot give degree, mult, weights or knots when you provide a NURBS parameter list")
+    debug_nurbs(control[2], control[1], splinesteps, width, size, weights=control[5],mult=control[4], type=control[0], knots=control[3],
+                show_weights=show_weights, show_knots=show_knots, show_index=show_index, show_control=show_control);
+  }
+  else {
+    $fn=8;
+    size = default(size, 3*width);
+    show_weights = default(show_weights, is_def(weights));
+    N=len(control);
+    twodim = len(control[0])==2;
+    curve = nurbs_curve(control=control,degree=degree,splinesteps=splinesteps, mult=mult,weights=weights, type=type, knots=knots);
+    stroke(curve, width=width, closed=type=="closed");//, color="green");
+    if (show_control)
+      stroke(control, width=width/2, color="white", closed=type=="closed");
+    if (show_knots){
+      knotpts = nurbs_curve(control=control, degree=degree, splinesteps=1, mult=mult, weights=weights, type=type, knots=knots);
+      echo(knotpts);
+        color([0,.8,0])
+        move_copies(knotpts)
+          if (twodim) union(){rect([3*width,width]); rect([width,3*width]);} //circle(r=width);
+          else for(i=[0:2]) cuboid(list_rotate([3*width,width,width],i));
+    }
+    color("blue")
+      if (show_index && show_control)
+        move_copies(control){
+          let(label = str($idx),
+              anch = show_weights && is_def(weights[$idx]) && weights[$idx]!=1 ? FWD : CENTER)
+            if (twodim) text(text=label, size=size, anchor=anch);
+            else rot($vpr) text3d(text=label, size=size, anchor=anch);
+      }
+    color("blue")
+      if ( show_weights)
+        move_copies(control){
+          if(is_def(weights[$idx]) && weights[$idx]!=1)
+            let(label = str("w=",weights[$idx]), 
+                anch = show_index ? BACK : CENTER
+                )
+            if (twodim) fwd(size/2*0)text(text=label, size=size, anchor=anch);
+            else rot($vpr) text3d(text=label, size=size, anchor=anch);
+      }
+  }
+}  
+
+
+
+// Function: nurbs_interp()
+// Synopsis: Finds a NURBS curve passing through a point list with optional derivative constraints.
+// Topics: NURBS Curves, Interpolation
+// See Also: nurbs_curve(), debug_nurbs(), debug_nurbs_interp()
+//
+// Usage:
+//   nurbs_param = nurbs_interp(points, degree, [method=], [closed=], [start_deriv=], [end_deriv=], [curvature=], [start_curvature=], [end_curvature=], [corners=], [deriv=], [extra_pts=], [smooth=]);
+//
+// Description:
+//   Given a list of data points and a NURBS degree, computes a curve of the specified degree
+//   that passes exactly through every data point.  The computed curve always has
+//   uniform weights, but irregularly spaced knots, so it is actually a non-uniform B-spline.  
+//   Data points may 2D or any higher dimension.  Returns a NURBS parameter list of the form
+//   `[type, degree, control_points, knots, undef, undef, u]` that can be
+//   passed directly to {{nurbs_curve()}} and other NURBS functions. The extra return value `u`,
+//   described in detail below, enables you to locate your input points in the computed spline
+//   .
+//   When `closed=false` (the default) the output is a "clamped" NURBS.  
+//   When `closed=true`, the interpolation treats the data points as a loop and produces a
+//   curve that is smooth at the closing point.  The output will be a "closed" NURBS (unless you
+//   specify corners as described below).  
+//   If you instead duplicate the closing point and set `closed=false` then the
+//   result will have a corner at the closing point. 
+//   .
+//   **Parameterization** (`method=`)
+//   .
+//   In order to solve the interpolation problem, the algorithm first chooses
+//   the NURBS parameter value `u[k]` that will correspond to each `points[k]`. 
+//   This parametrization step significantly affects the shape of the output curve, particularly when the
+//   data points are not evenly spaced.  The following methods are supported:
+//   .
+//   - `"length"` — Base parameters values on the chord length, which is distance between the consecutive data points.
+//     Best when data points are fairly evenly spaced.  
+//   - `"centripetal"` (default) — Base parameters values on the square root of the chord length. (Lee 1989).
+//   - `"dynamic"` — like centripetal, but the exponent 0.5 is replaced
+//     by a per-chord value chosen based on local spacing variation.  Long chords
+//     get a smaller exponent and short chords a larger one, compressing the
+//     influence of outliers.  Chord lengths are normalized, which makes the method scale
+//     invariant and prevents misbehavior at extreme scales.  Scaling is not given in the original reference. (Balta et al. 2020).
+//   - `"foley"` — centripetal base, augmented by corrections at each point that
+//     are proportional to the local turn angle.  Sharp bends pull parameter values
+//     closer together, which tends to reduce overshoot at corners (Foley & Neilson 1987).
+//   - `"fang"` — centripetal base, augmented by a correction based on the radius
+//     of the osculating circle at each point.  Said to handles mixed straight-and-curved
+//     segments particularly well.  This method is NOT scale invariant, so results will
+//     change if you scale your input data. (Fang & Hung 2013).
+//   .
+//   The other required input to the interpolation is the location of the knots.
+//   We place knots using a moving average of `degree` consecutive parameter values, which links
+//   the knots to the local parameter spacing.  A consequence of this process for selection
+//   of the parameters and knot locations is that even if your input data has symmetry it is
+//   likely that the symmetry will be broken in the output.  For closed curves, another
+//   consequence is that the resulting curve will depend on which point is chosen as the
+//   starting point for the interpolation.  The algorithm chooses a starting point 
+//   that is expected to provide the best behaved interpolation curve.  Examining the
+//   knot positions with {{debug_nurbs_interp()}} may help you understand unexpected behavior
+//   you observe in the output.  If your curve does not
+//   behave as desired you may be able to adjust it by imposing additional constraints or
+//   by giving it more freedom using `extra_pts`.              
+//   .
+//   **Derivative constraints** (`deriv=`, `start_deriv=`, `end_deriv=`)
+//   .
+//   `deriv[k]` specifies the tangent direction and speed the curve must have
+//   as it passes through `points[k]`.  The length of `deriv[k]` gives the speed
+//   as a multiple of `path_length(points)` which means a unit vector gives a natural
+//   speed that is a good starting point.  
+//   The speed has a big effect on the shape of the curve, so if the local shape is
+//   not as you desire you should try increasing it, which will make the curve around
+//   the point flatter or decreasing it, which will make the curve more pointy. 
+//   Set `deriv[k] = undef` to leave point `k` unconstrained.  
+//   If you only want to set the derivative at the ends of a "clamped" curve you can use
+//   `start_deriv=` and `end_deriv=`, which set 
+//   `deriv[0]` and `last(deriv)` without the need to provide a list of undefs for all the interior points. 
+//   .
+//   **Curvature constraints** (`curvature=`, `start_curvature=`, `end_curvature=`)
+//   .
+//   The curvature at a point measures how tightly a curve bends.
+//   When a point has curvature $\kappa$ then a circle with radius $1/\kappa$ 
+//   locally matches the curve at that point so both its first and second derivatives agree.
+//   This matched circle is called the osculating circle.  When you set `curvature[k]` this
+//   constrains the curvature at `points[k]`.  Every curvature-constrained point **must** also have a derivative constraint
+//   at the same index.  Curvature constraints require a degree of at least 2.  
+//   .
+//   In general curvature constraints require the curvature **vector**, which
+//   points in the direction of the osculating circle and has length equal to the curvature. 
+//   The curvature vector must be orthogonal to the tangent vector at the point;
+//   when you specify a curvature vector any component parallel to the tangent is removed.
+//   The magnitude of the curvature is taken as the magnitude of your original input vector,
+//   even if subtracting the tangent component changes its length.  
+//   For 2D curves you can also provide curvature as a scalar, with the sign indicating direction. 
+//   (positive = left/CCW,  negative = right/CW).
+//   .
+//   You can specify the curvature at the ends of "clamped" curves using
+//   `start_curvature=` and `end_curvature=`, which specify `curvature[0]`
+//   and `last(curvature)` without the need to create undefs for all the interior points. 
+//   .
+//   **Corners** (`corners=`)
+//   .
+//   `corners=` is a list of interior point indices where the curve has
+//   a corner, a discontinuity in the derivative.  You can also specify a corner
+//   at point `k` by setting `deriv[k]=NAN`.  When you request corners, the
+//   algorithm chops up the input data into separate clamped splines that run from corner
+//   to corner.  When `closed=true` this results in a "clamped" output spline, and the curve
+//   will start at one of your corner points.              
+//   If you place corners close together, the effective degree of the short segment
+//   in between the corners may be reduced.  These curve sections are assembled into a single
+//   NURBS so this process is transparent to the user.  A limitation is that you cannot control
+//   the dervatives of the two segments that meet at a corner.  If you need to do this you
+//   must construct your own sequence of clamped interpolations.  
+//   .
+//   **Extra control points** (`extra_pts=`, `smooth=`)
+//   .
+//   By default, the solver uses exactly as many control points as are needed to
+//   satisfy the interpolation and constraint conditions, which gives a unique
+//   solution.  This unique solution may be badly behaved, with undesirable oscillations.
+//   You can improve the behavior by requesting extra points.  
+//   Specifying `extra_pts=N` inserts `N` additional control points and knots, making the
+//   system underdetermined: infinitely many curves pass through the data points and satisfy 
+//   the constraints.  The solver picks the one that satisfies
+//   a smoothness criterion specified by `smooth=`:
+//   .
+//   - `smooth=1` — minimises the sum of squared differences between consecutive
+//     control points.  This tends to keep the control polygon short and reduces
+//     large-scale variation in the curve.
+//   - `smooth=2` — minimises the sum of squared second differences of the control
+//     points.  This penalises bending in the control polygon, generally producing
+//     a fairer, less wiggly curve than `smooth=1`.
+//   - `smooth=3` (default) — minimises the integrated squared second derivative
+//     $\int \|\mathbf{C}''(t)\|^2 \, dt$, often called the *bending energy* of
+//     the curve.  Unlike `smooth=2`, which only looks at the control polygon,
+//     this criterion acts directly on the curve shape and is the most
+//     mathematically principled choice for smooth interpolation.  Requires
+//     `degree >= 2`.
+//   .
+//   The number of extra control points cannot exceed the number of knot spans.
+//   If you request too many, the number is capped and a warning is displayed.
+//   With `corners=`, the curve is split into independent clamped segments and 
+//   the extra points are distributed across eligible segments proportionally
+//   to their control-point count, rounding up, so the total may
+//   exceed the requested number but will never be less.  A segment is eligible when
+//   its effective degree is 3 or higher, or when it is degree 2 with `smooth=1`.
+//   .
+//   **Locating points in the spline** — In order to locate your original data
+//   points in the spline you need the `u` parameter value that you
+//   can pass to {{nurbs_curve()}}.  The last return value `u` is a list
+//   where `u[k]` is the NURBS parameter at which the curve passes through
+//   `points[k]`.
+//   .
+//   **Smoothness** &mdash; The smoothness of B-splines is determined by the
+//   degree.  If you request a degree $p$ spline then it will be $C^{p-1}$ at
+//   knot points and $C^\infty$ everywhere else.  If you request corners then 
+//   these are points where the curve is not differentiable; corners may
+//   also divide the curve into small segments that lack sufficient points
+//   to support an interpolation at your requested degree: a degree $p$ interpolation
+//   requires $p+1$ points.  In this case, the intepolation is performed at a lower
+//   degree and elevated, which means it will be less smooth at knots.  
+//
+// Arguments:
+//   points = List of data points to interpolate (2D or any higher dimension).
+//   degree = Degree of the NURBS.  Degree 3 (cubic) is the most common choice.
+//   ---
+//   method    = Parameterization method: `"length"`, `"centripetal"`, `"dynamic"`, `"foley"`, or `"fang"`. Default: `"centripetal"`
+//   closed    = If true treat point list as a loop .  Default: `false`
+//   start_deriv    = If `closed=false`, gives the tangent vector at the first point
+//   end_deriv      = If `closed=false`, gives tangent vector at the last point.  
+//   deriv     = List of tangent vector constraints for every point, NAN at corners or undef at unconstrained points.  Cannot be combined with `start_deriv=`/`end_deriv=`.
+//   start_curvature = If `closed=false` gives curvature at first point.  (Requires matching derivative.)
+//   end_curvature   = If `closed=false` gives curvature at last point.  (Requires matching derivative.)
+//   curvature = List of curvature constraints for every point, or undef at unconstrained points.  Each curvature constraint must be paired with a derivative constraint at the same point.  Cannot be combined with `start_curvature=`/`end_curvature=`. 
+//   corners   = List of interior point indices where corners are permitted.  Equivalent to setting entries of `deriv` to NAN.
+//   extra_pts = Number of extra control points to add to provide additional freedom to control undesirable oscillations.  Default: 0
+//   smooth    = Smoothness criterion used with extra control points.  Set to 1 (minimize control-polygon length), 2 (minimize control-polygon bending) or 3 (minimize curve bending energy).   Default: 3
+//
+// Example(2D): Clamped curve (default)
+//   data = [[0,0], [10,30], [25,15], [40,35], [60,10], [80,25]];
+//   path = nurbs_curve(nurbs_interp(data, 3));
+//   stroke(path);
+//
+// Example(2D): Closed curve 
+//   // Do NOT repeat the first point at the end.
+//   data = [[0,0], [30,50], [60,40], [80,10], [50,-20], [20,-10]];
+//   path = nurbs_curve(nurbs_interp(data, 3, closed = true));
+//   stroke(path, closed = true);
+//
+// Example(2D): Closed polygon
+//   // All data points lie exactly on the polygon boundary.
+//   data = [[0,0], [30,50], [60,40], [80,10], [50,-20], [20,-10]];
+//   path = nurbs_curve(nurbs_interp(data, 3, closed=true), splinesteps=16);
+//   polygon(path);
+//   color("red") move_copies(data) circle(r=0.25, $fn=16);
+//
+// Example(2D): Get just the path
+//   data = [[0,0], [10,30], [25,15], [40,35], [60,10], [80,25]];
+//   path = nurbs_curve(nurbs_interp(data, 3), splinesteps=32);
+//   stroke(path, width=0.5);
+//   color("red") move_copies(data) circle(r=0.25, $fn=16);
+//
+// Example(2D): Low-level NURBS parameter list
+//   // nurbs_interp() returns a BOSL2 NURBS parameter list compatible
+//   // with nurbs_curve(), debug_nurbs(), etc.
+//   data = [[0,0], [10,30], [25,15], [40,35], [60,10], [80,25]];
+//   result = nurbs_interp(data, 3);
+//   curve = nurbs_curve(result, splinesteps=24);
+//   stroke(curve, width=0.5);
+//
+// Example(3D): 3D closed curve
+//   data3d = [[20,0,0],[0,20,10],[-20,0,20],[0,-20,10]];
+//   path = nurbs_curve(nurbs_interp(data3d, 3, closed=true), splinesteps=32);
+//   stroke(path, width=1, closed=true);
+//   color("red") move_copies(data3d) sphere(r=0.25, $fn=16);
+//
+// Example(2D,Big): Parameterization methods for sharp turns
+//   // "length" (blue), "centripetal" (red), "dynamic" (orange) compared.
+//   // For data with sudden direction changes or uneven chord spacing,
+//   // "centripetal" and "dynamic" reduce unwanted oscillations.
+//   sharp = [[0,0], [5,40],[6,40], [10,0], [50,0], [55,40],[56,42], [60,0]];
+//   color("blue")   stroke(nurbs_curve(nurbs_interp(sharp, 3, method = "centripetal"), splinesteps=32), width=0.1);
+//   color("red")    stroke(nurbs_curve(nurbs_interp(sharp, 3, method="foley"),         splinesteps=32), width=0.1);
+//   color("orange") stroke(nurbs_curve(nurbs_interp(sharp, 3, method="dynamic"),       splinesteps=32), width=0.1);
+//   color("green") move_copies(sharp) circle(r=.1, $fn=16);
+//
+// Example(2D): Endpoint tangent control
+//   // Specify start and/or end tangent vectors.  Each vector is automatically
+//   // scaled by the total chord length; a unit vector produces natural
+//   // arc-length speed.  Magnitude > 1 increases pull, < 1 weakens it.
+//   data = [[0,0], [20,30], [50,25], [80,0]];
+//   // No tangent control (natural):
+//   color("gray") stroke(nurbs_curve(nurbs_interp(data, 3), splinesteps=32), width=0.3);
+//   // Start going straight up, end going straight down:
+//   color("blue") stroke(
+//       nurbs_curve(nurbs_interp(data, 3, start_deriv=[1,0], end_deriv=[1,0]), splinesteps=32),
+//       width=0.3);
+//   // Start going right, end going right:
+//   color("red") stroke(
+//       nurbs_curve(nurbs_interp(data, 3, start_deriv=[1,0], end_deriv=[1,0]), splinesteps=32),
+//       width=0.3);
+//   color("black") move_copies(data) circle(r=0.25, $fn=16);
+//
+// Example(2D): Start tangent only
+//   data = [[0,0], [20,30], [50,25], [80,0]];
+//   color("gray") stroke(nurbs_curve(nurbs_interp(data, 3), splinesteps=32), width=0.3);
+//   color("blue") stroke(
+//       nurbs_curve(nurbs_interp(data, 3, start_deriv=[0,1]), splinesteps=32),
+//       width=0.3);
+//   color("black") move_copies(data) circle(r=0.25, $fn=16);
+//
+//
+
+function nurbs_interp(points, degree, method="centripetal", closed=false,
+                      deriv=undef, start_deriv=undef, end_deriv=undef,
+                      curvature=undef, start_curvature=undef, end_curvature=undef,
+                      corners=undef, extra_pts=0, smooth=3) =
+    assert(is_path(points, undef) && len(points) >= 2,
+           "nurbs_interp: points must be a path (list of same-dimension vectors) with at least 2 points")
+    assert(is_num(degree) && degree >= 1,
+           "nurbs_interp: degree must be >= 1")
+    assert(method == "length" || method == "centripetal" || method == "dynamic"
+               || method == "foley" || method == "fang",
+           str("nurbs_interp: method must be \"length\", \"centripetal\", \"dynamic\", \"foley\", or \"fang\", got \"", method, "\""))
+    assert(is_undef(deriv) || (is_undef(start_deriv) && is_undef(end_deriv)),
+           "nurbs_interp: use deriv= OR start_deriv=/end_deriv=, not both")
+    assert(!closed || (is_undef(start_deriv) && is_undef(end_deriv)),
+           "nurbs_interp: start_deriv/end_deriv only supported for closed=false")
+    assert(is_undef(deriv) || len(deriv) == len(points),
+           str("nurbs_interp: deriv= must have same length as points (",
+               len(points), " points, ", is_undef(deriv) ? 0 : len(deriv), " deriv)"))
+    assert(is_undef(curvature) || (is_undef(start_curvature) && is_undef(end_curvature)),
+           "nurbs_interp: use curvature= OR start_curvature=/end_curvature=, not both")
+    assert(!closed || (is_undef(start_curvature) && is_undef(end_curvature)),
+           "nurbs_interp: start_curvature=/end_curvature= only supported for closed=false")
+    assert(is_undef(curvature) || len(curvature) == len(points),
+           str("nurbs_interp: curvature= must have same length as points (",
+               len(points), " points, ", is_undef(curvature) ? 0 : len(curvature), " curvature)"))
+    assert(is_undef(corners) || (
+               !closed
+                 ? (min(corners) >= 1 && max(corners) <= len(points)-2)
+                 : (min(corners) >= 0 && max(corners) <= len(points)-1)),
+           str("nurbs_interp: corners= indices must be ",
+               !closed ? str("interior (1..", len(points)-2, ")")
+                       : str("valid point indices (0..", len(points)-1, ")")))
+    assert(is_num(extra_pts) && extra_pts >= 0 && extra_pts == floor(extra_pts),
+           str("nurbs_interp: extra_pts must be a non-negative integer, got ", extra_pts))
+    assert(extra_pts == 0 || degree >= 2,
+           "nurbs_interp: extra_pts requires degree >= 2")
+    assert(smooth == 1 || smooth == 2 || smooth == 3,
+           str("nurbs_interp: smooth must be 1, 2, or 3, got ", smooth))
+    assert(smooth != 3 || degree >= 2,
+           "nurbs_interp: smooth=3 (bending energy) requires degree >= 2")
+    let(
+        type     = closed ? "closed" : "clamped",
+        raw = type == "clamped"
+            ? _nurbs_interp_clamped(points, degree, method,
+                                     deriv, start_deriv, end_deriv,
+                                     curvature, start_curvature, end_curvature,
+                                     corners, extra_pts, smooth)
+            : _nurbs_interp_closed(points, degree, method, deriv, curvature,
+                                    corners, extra_pts, smooth),
+        eff_type = is_string(raw[3]) ? raw[3] : type,
+        rot      = raw[2],
+        n        = len(points),
+        u        = type == "closed" && !is_string(raw[3])
+                   ? list_rotate(
+                         _interp_params(list_rotate(points, rot), method, closed=true),
+                         -rot)
+                   : type == "closed"
+                     ? let(
+                           aug_pts    = [for (k = [0:1:n-1]) points[(k + rot) % n], points[rot]],
+                           aug_params = _interp_params(aug_pts, method)
+                       )
+                       [for (j = [0:1:n-1]) aug_params[(j - rot + n) % n]]
+                   : _interp_params(points, method)
+    )
+    [eff_type, degree, raw[0], raw[1], undef, undef, u];
+
+
+
+
+
+// Module: debug_nurbs_interp()
+// Synopsis: Interpolates a NURBS using {{nurbs_interp()}} and displays the curve with informative overlays.
+// Topics: NURBS Curves, Interpolation, Debugging
+// See Also: nurbs_interp(), debug_nurbs()
+//
+// Usage:
+//   debug_nurbs_interp(points, degree, [splinesteps=], [method=], [closed=], [deriv=], [start_deriv=], [end_deriv=], [curvature=], [start_curvature=], [end_curvature=], [corners=], [extra_pts=], [smooth=], [width=], [size=], [data_size=], [data_index=], [show_control=], [control_index=], [show_knots=], [show_deriv=], [show_curvature=]);
+//
+// Description:
+//   Calls {{nurbs_interp()}} with the supplied arguments and displays the
+//   resulting curve together with a informative overlays.  All interpolation
+//   arguments are passed through unchanged; see {{nurbs_interp()}} for their 
+//   descriptions.  The overlays are:
+//   .
+//   - **Data points** — red circles (2D) or spheres (3D) at each input point.
+//     When `data_index=true` (the default), the point index is printed in red next
+//     to its marker.  Set `data_size=0` to suppress display of the data point dots.
+//   - **Derivative constraints** — a black arrow at each derivative constrained data point.
+//     Arrow direction and length reflect the constraint vector, scaled to the average
+//     point spacing.  When the derivative is NAN or a point has a corner, this is shown
+//     using a black diamond.  Shown by default: set `show_deriv=false` to hide.
+//   - **Curvature constraints** — a transparent green overlay at each curvature-constrained point.
+//     In 2D the overlay is the osculating circle.  In 3D the overlay is a cylinder created
+//     from the 3D osculating circle.  Zero curvature appears as a short green bar.
+//     Shown by default: Set `show_curvature=false` to hide.
+//   - **Knots** — Green crosses mark each knot position.  Not shown by default.  
+//     Enable with `show_knots=true`.
+//   - **Control points and polygon** — If you set `show_control=true` then a gray control polygon
+//     Is displayed.  If you additionally set `control_index=true` then blue control-point
+//     index labels appear.
+//
+// Arguments:
+//   points  = List of 2-D or 3-D data points to interpolate through.
+//   degree  = NURBS degree.
+//   splinesteps     = Steps per knot span for curve rendering.  Default: `16`
+//   ---
+//   method          = Parameterization method; see {{nurbs_interp()}}.  Default: `"centripetal"`
+//   closed          = If true, interpolate as a closed loop; if false, interpolate as clamped.  Default: `false`
+//   deriv           = Per-point derivative constraints; see {{nurbs_interp()}}.  Default: `undef`
+//   start_deriv     = Derivative at first point.  Default: `undef`
+//   end_deriv       = Derivative at last point.  Default: `undef`
+//   curvature       = Per-point curvature constraints; see {{nurbs_interp()}}.  Default: `undef`
+//   start_curvature = Curvature at first point.  Default: `undef`
+//   end_curvature   = Curvature at last point.  Default: `undef`
+//   corners         = Corner indices; see {{nurbs_interp()}}.  Default: `undef`
+//   extra_pts       = Extra control points; see {{nurbs_interp()}}.  Default: `0`
+//   smooth          = Smoothness criterion for `extra_pts`; see {{nurbs_interp()}}.  Default: `3`
+//   width           = Stroke width for the curve.  Arrows and other overlays scale with this.  Default: `1`
+//   size            = Text size for labels on control points and data points.  Default: `3*width`
+//   data_size       = Radius of the red data-point markers.  Set to `0` to hide data points and their labels.  Default: equal to `width`
+//   data_index      = Show index labels next to each data point.  Only shown when `data_size > 0`.  Default: `true`
+//   show_control    = Show the control polygon.  Default: `false`
+//   control_index   = Show control-point index labels if `show_control=true`.  Default: `false`
+//   show_knots      = Show knot position markers on the curve.  Default: `false`
+//   show_deriv      = Show derivative-constraint arrows.  Default: `true`
+//   show_curvature  = Show curvature-constraint circles / disks.  Default: `true`
+
+module debug_nurbs_interp(points, degree, splinesteps=16, method="centripetal",
+                          closed=false, deriv=undef,
+                          start_deriv=undef, end_deriv=undef,
+                          curvature=undef, start_curvature=undef, end_curvature=undef,
+                          corners=undef, extra_pts=0, smooth=3,
+                          width=1, size=undef, data_size=undef,
+                          show_control=false, show_knots=false,
+                          show_deriv=true, show_curvature=true,
+                          control_index=false, data_index=true) {
+    result = nurbs_interp(points, degree, method=method,
+                          closed=closed, deriv=deriv,
+                          start_deriv=start_deriv, end_deriv=end_deriv,
+                          curvature=curvature, start_curvature=start_curvature,
+                          end_curvature=end_curvature, corners=corners,
+                          extra_pts=extra_pts, smooth=smooth);
+
+    np          = len(points);
+    dim         = len(points[0]);
+    is2d        = (dim == 2);
+    ds          = default(data_size, width);
+    sz          = default(size, 3 * width);
+    ctrl        = result[2];
+    arrow_scale = path_length(points) / np;
+
+    // Helpers project BOSL2 direction constants and pad dimensions automatically.
+    eff_der  = _merge_deriv_list(np-1, deriv, dim=dim, start_deriv=start_deriv, end_deriv=end_deriv);
+    eff_curv = _merge_curv_list(np-1, curvature, dim=dim, start_curvature=start_curvature, end_curvature=end_curvature);
+
+    // --- Curve, control polygon, knot markers (delegated to debug_nurbs) ---
+    debug_nurbs(result, splinesteps=splinesteps, width=width, size=sz,
+                show_knots=show_knots, show_control=show_control,
+                show_index=control_index);
+
+    // --- Corner marks (NaN-deriv corners + explicit corners= indices) ---
+    // 2D: rotated square stroke.  3D: octahedron wireframe.
+    nan_corner_idxs = is_undef(eff_der) ? []
+                    : [for (i = [0:1:np-1]) if (!is_undef(eff_der[i]) && is_nan(eff_der[i])) i];
+    explicit_corner_idxs = default(corners, []);
+    all_corner_idxs = deduplicate(sort(concat(nan_corner_idxs, explicit_corner_idxs)));
+    for (i = all_corner_idxs)
+        color("black")
+            translate(points[i])
+                if (is2d)
+                    zrot(45) stroke(rect(3.5*width*ds), width=width/2, closed=true);
+                else
+                    vnf_wireframe(octahedron(size=5*width), width=width/4);
+
+    // --- Derivative arrows (black, half width, arrow2 endcap) ---
+    // Length = norm(eff_der[i]) * arrow_scale: preserves relative magnitudes;
+    // arrow_scale = path_length(points)/np gives a geometry-relative baseline.
+    if (show_deriv && !is_undef(eff_der))
+        for (i = [0:1:np-1])
+            if (!is_undef(eff_der[i]) && !is_nan(eff_der[i]) && norm(eff_der[i]) > 1e-12)
+                color("black")
+                    stroke([points[i], points[i] + eff_der[i] * arrow_scale],
+                           width=width/2,
+                           endcap1="butt", endcap2="arrow2");
+
+    // --- Data points and index labels ---
+    if (ds > 0)
+        color("red")
+            move_copies(points) {
+                if (is2d) circle(r=ds, $fn=16);
+                else      sphere(r=ds, $fn=16);
+                if (data_index)
+                    if (is2d)
+                        fwd(2*ds) text(text=str($idx), size=sz, anchor=BACK);
+                    else
+                        rot($vpr) back(ds + sz/3) text3d(text=str($idx), size=sz, anchor=CENTER);
+            }
+
+    // --- Curvature overlays (rendered last so transparent objects don't occlude dots) ---
+    // Validator already asserted every curvature-constrained point has a derivative,
+    // so eff_der[i] is always defined and non-NaN here.
+    if (show_curvature && !is_undef(eff_curv))
+        color([0,1,0,0.1])
+        for (i = [0:1:np-1])
+            if (!is_undef(eff_curv[i])) {
+                // cv is either a signed scalar (2D) or a dim-projected vector.
+                cv    = eff_curv[i];
+                kn    = is_num(cv) ? abs(cv) : norm(cv);
+                T_hat = unit(eff_der[i]);
+                if (kn < 1e-12) {
+                    // Zero curvature: fixed-length segment (0.6*arrow_scale) along
+                    // the exact derivative direction.
+                    half = 0.3 * arrow_scale;
+                    stroke([points[i] - T_hat * half,
+                            points[i] + T_hat * half],
+                           width=2*width, endcaps="butt");
+                } else {
+                    // Non-zero curvature: osculating circle (2D) or cylinder (3D).
+                    // N_hat: unit principal normal — component of cv perpendicular to T_hat.
+                    N_hat = is_num(cv)
+                        ? // Signed scalar (2D): rotate T_hat 90° left or right by sign(cv).
+                          sign(cv) * [-T_hat[1], T_hat[0]]
+                        : // Vector: strip tangential component via vector_perp, then unit.
+                          unit(vector_perp(T_hat, cv));
+                    r   = 1 / kn;
+                    ctr = points[i] + N_hat * r;
+                    // move(ctr) applies to both 2D and 3D branches.
+                    move(ctr)
+                        if (is2d) {
+                            circle(r=r);
+                        } else {
+                            // Cylinder in the osculating plane: axis along binormal B̂ = T̂ × N̂.
+                            // cyl(orient=binom) aligns the cylinder axis to B̂ without rot().
+                            binom = cross(T_hat, N_hat);
+                            cyl(h=width, r=r, orient=binom);
+                        }
+                }
+            }
+}
+
+
+
 // Function: nurbs_elevate_degree()
 // Synopsis: Raises the degree of a closed or open NURBS.
 // Topics: NURBS Curves
@@ -482,126 +1098,6 @@ function nurbs_elevate_degree(control, degree, knots=undef,
     ? [type, r[2], r[0], new_knots, undef, undef]
     : nurbs_elevate_degree(r[0], r[2], new_knots, type=type, times=times-1);
 
-       
-
-function _nurbs_pt(knot, control, u, r, p, k) = 
-    r>p ? control[0]
-  :                          
-    let( 
-         ctrl_new = [for(i=[k-p+r:1:k])
-                       let(
-                            alpha = (u-knot[i]) / (knot[i+p-r+1]-knot[i])
-                       )
-                       (1-alpha) * control[i-1-(k-p)-r+1] + alpha*control[i-(k-p)-r+1]
-                    ]
-    )
-    _nurbs_pt(knot,ctrl_new,u,r+1,p,k);
-
-
-function _extend_knot_mult(mult, next, len) =
-    let(total = sum(mult))
-    total == len ? mult
-  : total>len ? [ each select(mult,0,-2), last(mult)-(total-len) ]
-  : _extend_knot_mult([each mult,mult[next]], next+1, len);
-
-function _extend_knot_vector(knots,next,len) =
-    len(knots)==len ? knots
-  : _extend_knot_vector([each knots, last(knots)+knots[next+1]-knots[next]], next+1, len);
-
-
-function _calc_mult(knots) =
-  let(
-      ind=[ 0,
-            for(i=[1:len(knots)-1])
-              if (!approx(knots[i],knots[i-1])) i,
-            len(knots)
-          ]
-  )
-  deltas(ind);
-
-
-// Module: debug_nurbs()
-// Synopsis: Shows a NURBS curve and its control points, knots and weights
-// SynTags: Geom
-// Topics: NURBS, Debugging
-// See Also: nurbs_curve()
-// Usage:
-//   debug_nurbs(control, degree, [width], [splinesteps=], [type=], [mult=], [knots=], [size=], [show_weights=], [show_knots=], [show_idx=]);
-// Description:
-//   Displays a 2D or 3D NURBS and the associated control points to help debug NURBS curves.  You can display the
-//   control point indices and weights, and can also display the knot points.
-//   Instead of providing separate parameters you can give a first parameter of the form of a NURBS parameter list: `[type, degree, control, knots, mult, weights]`.  
-// Arguments:
-//   control = list of control points in any dimension or a NURBS parameter list
-//   degree = degree of NURBS
-//   splinesteps = number of segments between each pair of knots.  Default: 16
-//   width = width of the line.  Default: 1
-//   size = size of text annotations.  Default: 3 times the width
-//   mult = multiplicity vector for NURBS
-//   weights = weight vector for NURBS
-//   type = NURBS type, one of "clamped", "open" or "closed".  Default: "clamped"
-//   show_index = if true then display index of each control point vertex.  Default: true
-//   show_weights = if true then display any non-unity weights.  Default: true if weights vector is supplied, false otherwise
-//   show_knots = If true then show the knots on the spline curve.  Default: false
-//   show_control = If true then show the control points and its polygon.  Default: true
-// Example(2D,Med,NoAxes): The default display includes the control point polygon with its vertices numbered, and the NURBS curve
-//   pts = [[5,0],[0,20],[33,43],[37,88],[60,62],[44,22],[77,44],[79,22],[44,3],[22,7]];
-//   debug_nurbs(pts,4,type="closed");
-// Example(2D,Med,NoAxes): If you want to see the knots set `show_knots=true`:
-//   pts = [[5,0],[0,20],[33,43],[37,88],[60,62],[44,22],[77,44],[79,22],[44,3],[22,7]];
-//   debug_nurbs(pts,4,type="clamped",show_knots=true);
-// Example(2D,Med,NoAxes): Non-unity weights are displayed if you give a weight vector
-//   pts = [[5,0],[0,20],[33,43],[37,88],[60,62],[44,22],[77,44],[79,22],[44,3],[22,7]];
-//   weights = [1,1,1,7,1,1,7,1,1,1];
-//   debug_nurbs(pts,4,type="closed",weights=weights);
-
-module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,type="clamped",knots, show_weights, show_knots=false, show_index=true, show_control=true)
-{
-  if (is_list(control) && in_list(control[0], ["closed","open","clamped"])) {
-    assert(len(control)>=6, "Invalid NURBS parameter list")
-    assert(num_defined([degree,mult,weights,knots])==0,
-           "Cannot give degree, mult, weights or knots when you provide a NURBS parameter list")
-    debug_nurbs(control[2], control[1], splinesteps, width, size, weights=control[5],mult=control[4], type=control[0], knots=control[3],
-                show_weights=show_weights, show_knots=show_knots, show_index=show_index, show_control=show_control);
-  }
-  else {
-    $fn=8;
-    size = default(size, 3*width);
-    show_weights = default(show_weights, is_def(weights));
-    N=len(control);
-    twodim = len(control[0])==2;
-    curve = nurbs_curve(control=control,degree=degree,splinesteps=splinesteps, mult=mult,weights=weights, type=type, knots=knots);
-    stroke(curve, width=width, closed=type=="closed");//, color="green");
-    if (show_control)
-      stroke(control, width=width/2, color="white", closed=type=="closed");
-    if (show_knots){
-      knotpts = nurbs_curve(control=control, degree=degree, splinesteps=1, mult=mult, weights=weights, type=type, knots=knots);
-      echo(knotpts);
-        color([0,.8,0])
-        move_copies(knotpts)
-          if (twodim) union(){rect([3*width,width]); rect([width,3*width]);} //circle(r=width);
-          else for(i=[0:2]) cuboid(list_rotate([3*width,width,width],i));
-    }
-    color("blue")
-      if (show_index && show_control)
-        move_copies(control){
-          let(label = str($idx),
-              anch = show_weights && is_def(weights[$idx]) && weights[$idx]!=1 ? FWD : CENTER)
-            if (twodim) text(text=label, size=size, anchor=anch);
-            else rot($vpr) text3d(text=label, size=size, anchor=anch);
-      }
-    color("blue")
-      if ( show_weights)
-        move_copies(control){
-          if(is_def(weights[$idx]) && weights[$idx]!=1)
-            let(label = str("w=",weights[$idx]), 
-                anch = show_index ? BACK : CENTER
-                )
-            if (twodim) fwd(size/2*0)text(text=label, size=size, anchor=anch);
-            else rot($vpr) text3d(text=label, size=size, anchor=anch);
-      }
-  }
-}  
 
 
 // Section: NURBS Surfaces
@@ -854,19 +1350,847 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 
 
 
-//////////////////////////////////////////////////////////////////////
+// Function&Module: nurbs_interp_surface()
+// Synopsis: Returns a NURBS surface that passes through a grid of 3D data points.
+// SynTags: Geom
+// Topics: NURBS Surfaces, Interpolation
+// See Also: nurbs_vnf(), nurbs_interp()
 //
-//   NURBS curve and surface interpolation through data points.
-//   Given a set of data points, computes the control points and knot
-//   vector of a B-spline that passes exactly through every data point.
-//   Supports clamped curves (open-ended), closed curves (smooth loops),
-//   and surfaces of both types in each parametric direction.
-//   Optional per-point derivative and curvature constraints are supported.
+// Usage: As a function, returns a NURBS parameter list:
+//   nurbs_param = nurbs_interp_surface(points, degree, [method=], [row_wrap=], [col_wrap=], [normal1=], [normal2=], [flat_edges=], [flat_end1=], [flat_end2=], [row_edges=], [col_edges=], [extra_pts=], [smooth=], [first_row_deriv=], [last_row_deriv=], [first_col_deriv=], [last_col_deriv=]);
+// Usage: As a module, renders the surface directly:
+//   nurbs_interp_surface(points, degree, [splinesteps=], [row_wrap=], [col_wrap=], [method=], [extra_pts=], [smooth=], ...) CHILDREN;
+// Description:
+//   Finds the control points and knot vectors for a NURBS surface of the specified degree that passes
+//   exactly through every data point in a grid of 3D points.  The result has
+//   uniform weights but non-uniform knots so it is actually a non-uniform B-spline.
+//   When called as a function, the return value is a NURBS parameter list
+//   `[type, degree, ctrl_grid, knots, undef, undef, uv]` that can be passed
+//   directly to `{{nurbs_vnf()}}`.  The extra return value `uv`,
+//   described in detail below, enables you to locate your input points in the computed spline
+//   When called as a module, renders the NURBS surface as geometry.
 //   .
-//   Algorithm from Piegl & Tiller, "The NURBS Book", Chapters 2 & 9.
+//   Several of the parameters that correspond to parameters for {{nurbs_interp()}} 
+//   can be given as either a scalar or 2-vector.  When you give a 2-vector the
+//   first value applies along the first index of your point data, i.e. from row
+//   to row, or along columns.  The second value applies along the second index,
+//   i.e. within rows.  
+//   .
+//   Setting `row_wrap=true` smoothly connects the first and last rows in a loop,  
+//   and `col_wrap=true` smoothly joins the first and last columns.  Both false (the default) gives a
+//   surface with four edges.  One true gives a tube; both true gives a torus.
+//   A tube by itself is not a valid closed manifold in OpenSCAD; you can make it valid by adding caps or
+//   you can close it into a ball by specifying degenerate edges where the entire edge collapses to
+//   one identical point. 
+//   .
+//   **Boundary constraints**
+//   .
+//   Flat boundary (`row_wrap=false, col_wrap=false`) — `flat_edges=`.  Applies when
+//   all four surface edges are coplanar.  Set `flat_edges` to a 4-element list
+//   `[first_row, last_row, first_col, last_col]`; each entry is a scalar or per-point list
+//   giving the derivative scale for that edge (`undef` leaves the edge unconstrained).
+//   `flat_edges=s` expands to `[s,s,s,s]`.  A positive value flares the surface
+//   outward from the edge; negative turns it inward.
+//   .
+//   End normals (one of `row_wrap`/`col_wrap` true, the other false) — `normal1=` and
+//   `normal2=`.  Apply when the specified boundary edge is degenerate (all points
+//   identical, e.g. a cone tip).  The surface is constrained to be normal to the given
+//   vector at that edge.  The vector magnitude controls how broadly the surface spreads.
+//   .
+//   Flat ends (one of `row_wrap`/`col_wrap` true, the other false) — `flat_end1=` and
+//   `flat_end2=`.  Apply when the specified boundary edge is coplanar and non-degenerate.
+//   Constrains the derivative to lie in the plane of the edge.  Positive points inward
+//   (smooth cap attachment); negative flares outward.  Scalar or per-point list.
+//   .
+//   **Advanced boundary derivatives** — `first_row_deriv=`, `last_row_deriv=`,
+//   `first_col_deriv=`, and `last_col_deriv=` enforce specific first partial derivatives
+//   along the four boundary edges.  Each accepts a single vector (applied to every
+//   point on the edge) or a list of vectors (one per point).  Vectors are scaled by
+//   total chord length, so a unit vector matches the parameterization speed.  These
+//   require `row_wrap=false` (for row derivs) or `col_wrap=false` (for col derivs).
+//   .
+//   Use with care: the solver enforces derivatives exactly at data points but the
+//   surface may wander between them.  The basic constraints above apply in special cases where the geometry guarantees
+//   well-defined behavior along an entire edge, including the points in between data points.
+//   When both row and column boundary derivatives are
+//   active, the cross-derivative $\partial^2 S/\partial u \partial v$ is assumed to be zero at corners.
+//   .
+//   **Edges** — `row_edges=` and `col_edges=` insert edges or creases across the surface.
+//   Use `row_edges=` to specify the indices of rows that will be edges or creases,
+//   and `col_edges=` to specify the indices of columns that will be edges or creases. 
+//   For a non-wrapped direction, indices must be interior (not first or last).
+//   If you place edges close together, the effective degree of a narrow patch between
+//   edges may be reduced.  These patches are assembled into a single NURBS so this
+//   process is transparent to the user.  
+//   .
+//   **Extra control points** (`extra_pts=`, `smooth=`) — By default the solver uses
+//   exactly the number of control points needed to satisfy the constraints, which
+//   gives a unique solution that may be badly behaved.  Specifying `extra points=`
+//   and optionally `smooth=`, works the same way as in 
+//   for {{nurbs_interp()}}.  Both parameters can be scalars or 2-vectors to
+//   provide different values along the two directions.  
+//   .
+//   **Locating points in the spline** — In order to locate your original data
+//   points in the spline you need the `u` and `v` nurbs parameter values that you
+//   can pass to {{nurbs_patch_points()}}.  The last return value `uv` gives these:
+//   `uv[0][j]` is the u parameter for row `j` and `uv[1][k]` is the v parameter
+//   for column `k`, so the point `points[j][k]` lies at `(uv[0][j], uv[1][k])`
+//   in NURBS parameter space.
+//   .
+//   **Smoothness** — The smoothness of B-splines is determined by the
+//   degree.  If you request a degree p spline then it will be $C^{p-1}$ at
+//   knot points and $C^\infty$ everywhere else.  If you request edges then
+//   these are points where the surface is not differentiable; edges may
+//   also divide the surface into smaller regions that lack sufficient points
+//   to support an interpolation of your requested degree: a degree p interpolation
+//   requires p+1 points.  In this case, the interpolation is performed at a lower
+//   degree and elevated, which means it will be less smooth at knots.
+// Arguments:
+//   points = Rectangular grid of 3D data points
+//   degree = scalar or 2-vector giving the degree of the B-spline in the two directions.
+//   splinesteps  = (module) Scalar or 2-vector giving the number of segments between each knot in the two directions.  Default: 16
+//   ---
+//   method    = Parameterization method: `"length"`, `"centripetal"`, `"dynamic"`, `"foley"`, or `"fang"`.  Default: `"centripetal"`
+//   row_wrap  = If true, smoothly connect the first row to the last row.  Default: false
+//   col_wrap  = If true, smoothly connect the first column to the last column.  Default: false
+//   extra_pts = Scalar or 2-vector giving the number of extra points in the two directions.  Default: `0`
+//   smooth    = Scalar or 2-vector giving the smoothness metric for extra points in the two directions: `1` (min polygon length), `2` (min bending), `3` (min bending energy).   Default: `3`
+//   flat_edges = 4-element list `[first_row, last_row, first_col, last_col]` of derivative scales at the four coplanar boundary edges.  Each entry is a scalar or per-point list; `undef` leaves that edge unconstrained.  Shorthand: `flat_edges=s` → `[s,s,s,s]`.  Requires `row_wrap=false, col_wrap=false`. 
+//   normal1   = Surface normal at the first degenerate boundary edge (mixed wrap surface only). 
+//   normal2   = Surface normal at the second degenerate boundary edge (mixed wrap surface only).
+//   flat_end1 = Inward derivative scale at the first coplanar non-degenerate boundary edge (mixed wrap surface).  Scalar or per-point list. 
+//   flat_end2 = Inward derivative scale at the second coplanar non-degenerate boundary edge (mixed wrap surface).  Scalar or per-point list.
+//   row_edges   = Row indices (or index) of rows that are treated as edges or creases.  
+//   col_edges   = Column indices (or index) of columns that are treated as edges or creases
+//   first_row_deriv = $\partial S/\partial u$ constraint along u=0 (first row).  Single vector or list of vectors (one per column).  Requires `row_wrap=false`.  
+//   last_row_deriv  = $\partial S/\partial u$ constraint along u=1 (last row).  Single vector or list of vectors (one per column).  Requires `row_wrap=false`.  
+//   first_col_deriv = $\partial S/\partial v$ constraint along v=0 (first column).  Single vector or list of vectors (one per row).  Requires `col_wrap=false`. 
+//   last_col_deriv  = $\partial S/\partial v$ constraint along v=1 (last column).  Single vector or list of vectors (one per row).  Requires `col_wrap=false`.  
+//   data_size    = (module) Radius of data-point markers; 0 suppresses markers.  Default: 0
+//   data_color   = (module) Color for data-point markers.  Default: `"red"`
+//   style        = (module) Triangulation style passed to `vnf_vertex_array()`.  Default: `"default"`
+//   reverse      = (module) If true, reverses face normals.  Default: false
+//   triangulate  = (module) If true, triangulates all quads.  Default: false
+//   caps         = (module) Cap both open boundary edges (mixed wrap only).  Default: false
+//   cap1         = (module) Cap the first open boundary edge.  
+//   cap2         = (module) Cap the second open boundary edge. 
+//   cp = (module) Centerpoint for determining intersection anchors or centering the shape.  Determines the base of the anchor vector.  Can be "centroid", "mean", "box" or a 3D point.  Default: "centroid"
+//   anchor = (module) Translate so anchor point is at origin (0,0,0).  See [anchor](attachments.scad#subsection-anchor).  Default: `"origin"`
+//   spin = (module) Rotate this many degrees around the Z axis after anchor.  See [spin](attachments.scad#subsection-spin).  Default: `0`
+//   orient = (module) Vector to rotate top toward, after spin. See [orient](attachments.scad#subsection-orient).  Default: `UP`
+//   atype = (module) Select "hull" or "intersect" anchor type.  Default: "hull"
 //
-//////////////////////////////////////////////////////////////////////
+// Example(3D): Basic surface interpolation
+//   // A 4x5 grid of 3D data points produces a smooth interpolating surface.
+//   data = [
+//       [[-50, 50,  0], [-16, 50,  20], [ 16, 50,  10], [50, 50,  0], [80, 50,  5]],
+//       [[-50, 16, 20], [-16, 16,  40], [ 16, 16,  30], [50, 16, 20], [80, 16, 10]],
+//       [[-50,-16, 20], [-16,-16,  35], [ 16,-16,  40], [50,-16, 15], [80,-16, 25]],
+//       [[-50,-50,  0], [-16,-50,  10], [ 16,-50,  20], [50,-50,  0], [80,-50,  5]],
+//   ];
+//   nurbs_interp_surface(data, 3, splinesteps=8);
+//
+// Example(3D): Different degrees per direction
+//   // Quadratic in u (rows), cubic in v (columns).
+//   data = [
+//       for (u = [-40:20:40])
+//           [for (v = [-40:20:40])
+//               [v, u, 15*sin(u*3)*cos(v*3)]]
+//   ];
+//   nurbs_interp_surface(data, [2,3], splinesteps=8);
+//
+// Example(3D): Tube (surface closed in one direction)
+//   // Closed around the column direction (the rings), clamped along rows
+//   // (the axis).  Uses 5 rings: a cubic closed direction needs at least
+//   // p+2 = 5 data points to have interior knot freedom.
+//   r = 20;
+//   data = [for (u = [0:15:60])
+//       [for (i = [0:1:5])
+//           let(a = i * 360/6)
+//           [r*cos(a), r*sin(a), u]]
+//   ];
+//   nurbs_interp_surface(data, 3, splinesteps=8, col_wrap=true);
+//
+// Example(3D): Torus (surface closed in both directions)
+//   // Both directions sample a full 360 circle with even angular spacing,
+//   // so the closing segment equals the inter-point spacing and
+//   // parameterization is uniform.  Each direction uses N=6 > p+1=4
+//   // points to ensure interior knot freedom.
+//   R = 30; r = 10;
+//   N = 6;
+//   data = [for (i = [0:1:N-1])
+//       let(phi = i * 360/N)
+//       [for (j = [0:1:N-1])
+//           let(theta = j * 360/N)
+//           [(R + r*cos(theta))*cos(phi),
+//            (R + r*cos(theta))*sin(phi),
+//            r*sin(theta)]]
+//   ];
+//   nurbs_interp_surface(data, 3, splinesteps=12,
+//       row_wrap=true, col_wrap=true);
+//
+// Example(3D): Low-level surface access
+//   // nurbs_interp_surface() returns a BOSL2 NURBS parameter list
+//   // compatible with nurbs_vnf(), debug_nurbs(), etc.
+//   data = [
+//       [[-30,30,0], [0,30,20], [30,30,0]],
+//       [[-30, 0,10],[0, 0,30], [30, 0,10]],
+//       [[-30,-30,0],[0,-30,15],[30,-30,0]],
+//   ];
+//   result = nurbs_interp_surface(data, 2);
+//   vnf = nurbs_vnf(result, splinesteps=12);
+//   vnf_polyhedron(vnf);
+//   color("red")
+//       for (row = data) for (pt = row)
+//           translate(pt) sphere(r=1, $fn=16);
 
+
+function nurbs_interp_surface(points, degree, method="centripetal",
+                              row_wrap=false, col_wrap=false,
+                              first_row_deriv=undef, last_row_deriv=undef,
+                              first_col_deriv=undef, last_col_deriv=undef,
+                              normal1=undef, normal2=undef,
+                              flat_end1=undef, flat_end2=undef,
+                              flat_edges=undef,
+                              row_edges=undef, col_edges=undef,
+                              extra_pts=0, smooth=3) =
+    // Preamble: extract shape/edge info needed for closed-direction dispatch.
+    let(
+        n_rows      = len(points),
+        n_cols      = len(points[0]),
+        ue_norm_pre = is_undef(row_edges) ? undef : force_list(row_edges),
+        ve_norm_pre = is_undef(col_edges) ? undef : force_list(col_edges),
+        has_ue_pre  = !is_undef(ue_norm_pre) && len(ue_norm_pre) > 0,
+        has_ve_pre  = !is_undef(ve_norm_pre) && len(ve_norm_pre) > 0
+    )
+    // col_edges on a closed v-direction: rotate columns so the first crease column
+    // becomes the v=0/v=1 boundary, append a copy at the end for the C0 seam,
+    // then recurse with col_wrap=false.  Remaining crease indices are shifted
+    // into the rotated coordinate system.
+    has_ve_pre && col_wrap ?
+        let(
+            ve_sorted  = sort(ve_norm_pre),
+            rot        = ve_sorted[0],
+            new_pts    = [for (row = points)
+                              concat([for (l = [rot:1:n_cols-1]) row[l]],
+                                     [for (l = [0:1:rot-1])      row[l]],
+                                     [row[rot]])],
+            adj_ve_raw = [for (i = [1:1:len(ve_sorted)-1])
+                              let(j = (ve_sorted[i] - rot + n_cols) % n_cols)
+                              if (j > 0) j],
+            adj_ve     = len(adj_ve_raw) == 0 ? undef : adj_ve_raw
+        )
+        let(inner = nurbs_interp_surface(new_pts, degree, method=method,
+                row_wrap=row_wrap, col_wrap=false,
+                first_row_deriv=first_row_deriv, last_row_deriv=last_row_deriv,
+                first_col_deriv=first_col_deriv, last_col_deriv=last_col_deriv,
+                normal1=normal1, normal2=normal2,
+                flat_end1=flat_end1, flat_end2=flat_end2, flat_edges=flat_edges,
+                row_edges=row_edges, col_edges=adj_ve,
+                extra_pts=extra_pts, smooth=smooth))
+        [inner[0], inner[1], inner[2], inner[3], inner[4], inner[5],
+         [inner[6][0],
+          list_rotate(select(inner[6][1], 0, n_cols-1), -rot)]]
+    // row_edges on a closed u-direction: rotate rows so the first crease row
+    // becomes the u=0/u=1 boundary, append a copy at the end, recurse clamped.
+    : has_ue_pre && row_wrap ?
+        let(
+            ue_sorted  = sort(ue_norm_pre),
+            rot        = ue_sorted[0],
+            new_pts    = concat([for (k = [rot:1:n_rows-1]) points[k]],
+                                [for (k = [0:1:rot-1])      points[k]],
+                                [points[rot]]),
+            adj_ue_raw = [for (i = [1:1:len(ue_sorted)-1])
+                              let(j = (ue_sorted[i] - rot + n_rows) % n_rows)
+                              if (j > 0) j],
+            adj_ue     = len(adj_ue_raw) == 0 ? undef : adj_ue_raw
+        )
+        let(inner = nurbs_interp_surface(new_pts, degree, method=method,
+                row_wrap=false, col_wrap=col_wrap,
+                first_row_deriv=first_row_deriv, last_row_deriv=last_row_deriv,
+                first_col_deriv=first_col_deriv, last_col_deriv=last_col_deriv,
+                normal1=normal1, normal2=normal2,
+                flat_end1=flat_end1, flat_end2=flat_end2, flat_edges=flat_edges,
+                row_edges=adj_ue, col_edges=col_edges,
+                extra_pts=extra_pts, smooth=smooth))
+        [inner[0], inner[1], inner[2], inner[3], inner[4], inner[5],
+         [list_rotate(select(inner[6][0], 0, n_rows-1), -rot),
+          inner[6][1]]]
+    // Normal path: both directions already clamped, or no conflicting edge constraints.
+    : let(
+        p_u    = is_list(degree) ? degree[0] : degree,
+        p_v    = is_list(degree) ? degree[1] : degree,
+        ep_u     = is_list(extra_pts) ? extra_pts[0] : extra_pts,
+        ep_v     = is_list(extra_pts) ? extra_pts[1] : extra_pts,
+        smooth_u = is_list(smooth) ? smooth[0] : smooth,
+        smooth_v = is_list(smooth) ? smooth[1] : smooth,
+        n_rows = len(points),
+        n_cols = len(points[0]),
+        dim    = len(points[0][0]),
+        // Scalar-vector promotion: if the caller passes a single vector instead of
+        // a list of vectors, repeat() it to the required length.  A single vector
+        // is detected as a list whose first element is a number, not a list.
+        first_row_deriv = is_undef(first_row_deriv) || is_list(first_row_deriv[0]) ? first_row_deriv
+                      : repeat(first_row_deriv, n_cols),
+        last_row_deriv = is_undef(last_row_deriv) || is_list(last_row_deriv[0]) ? last_row_deriv
+                      : repeat(last_row_deriv, n_cols),
+        first_col_deriv = is_undef(first_col_deriv) || is_list(first_col_deriv[0]) ? first_col_deriv
+                      : repeat(first_col_deriv, n_rows),
+        last_col_deriv = is_undef(last_col_deriv) || is_list(last_col_deriv[0]) ? last_col_deriv
+                      : repeat(last_col_deriv, n_rows),
+        // Treat an all-undef derivative list the same as undef.
+        has_sud = !is_undef(first_row_deriv) && num_defined(first_row_deriv) > 0,
+        has_eud = !is_undef(last_row_deriv) && num_defined(last_row_deriv) > 0,
+        has_svd = !is_undef(first_col_deriv) && num_defined(first_col_deriv) > 0,
+        has_evd = !is_undef(last_col_deriv) && num_defined(last_col_deriv) > 0,
+        has_sn  = !is_undef(normal1),
+        has_en  = !is_undef(normal2),
+        // normal1/normal2: apex edges only (all boundary points identical, e.g. cone tip).
+        // Auto-detect u=0/v=0 direction; u=0 (first row) takes priority.
+        start_u_apex = has_sn && max([for (pt = points[0])       norm(pt - points[0][0])]) < 1e-10,
+        start_v_apex = has_sn && max([for (k = [0:1:n_rows-1])   norm(points[k][0] - points[0][0])]) < 1e-10,
+        end_u_apex   = has_en && max([for (pt = points[n_rows-1]) norm(pt - points[n_rows-1][0])]) < 1e-10,
+        end_v_apex   = has_en && max([for (k = [0:1:n_rows-1])   norm(points[k][n_cols-1] - points[0][n_cols-1])]) < 1e-10,
+        has_sun = has_sn && start_u_apex,
+        has_eun = has_en && end_u_apex,
+        has_svn = has_sn && !start_u_apex && start_v_apex,
+        has_evn = has_en && !end_u_apex   && end_v_apex,
+        start_u_degen = start_u_apex,
+        start_v_degen = start_v_apex,
+        end_u_degen   = end_u_apex,
+        end_v_degen   = end_v_apex,
+        // flat_end1/flat_end2: coplanar non-collinear edges (points span a plane).
+        // Scalar or per-point list.  positive = closes inward, negative = flares outward.
+        // Direction is determined by the clamped direction of the surface:
+        //   row_wrap=false → flat_end applies to row boundaries (u-direction, first/last row).
+        //   col_wrap=false → flat_end applies to column boundaries (v-direction, first/last col).
+        // Exactly one direction must be clamped (enforced by assertion below).
+        has_fe1    = !is_undef(flat_end1),
+        has_fe2    = !is_undef(flat_end2),
+        has_fe1_u  = has_fe1 && !row_wrap,
+        has_fe1_v  = has_fe1 && !col_wrap,
+        has_fe2_u  = has_fe2 && !row_wrap,
+        has_fe2_v  = has_fe2 && !col_wrap,
+        // Boundary edges for coplanar validation.
+        fe1_edge   = has_fe1_u ? points[0]
+                   : has_fe1_v ? [for (k = [0:1:n_rows-1]) points[k][0]]
+                   : [],
+        fe2_edge   = has_fe2_u ? points[n_rows-1]
+                   : has_fe2_v ? [for (k = [0:1:n_rows-1]) points[k][n_cols-1]]
+                   : [],
+        fe1_ok     = !has_fe1 || (_is_coplanar_pts(fe1_edge) && !is_undef(_pts_plane_normal(fe1_edge))),
+        fe2_ok     = !has_fe2 || (_is_coplanar_pts(fe2_edge) && !is_undef(_pts_plane_normal(fe2_edge))),
+        // flat_edges= parsing: 4-element list [first_row, last_row, first_col, last_col].
+        // Scalar shorthand: flat_edges=s expands to [s, s, s, s].
+        fe_norm  = !is_undef(flat_edges) && !is_list(flat_edges)
+                 ? [flat_edges, flat_edges, flat_edges, flat_edges]
+                 : flat_edges,
+        has_fe   = !is_undef(fe_norm),
+        fe_su    = has_fe ? fe_norm[0] : undef,
+        fe_eu    = has_fe ? fe_norm[1] : undef,
+        fe_sv    = has_fe ? fe_norm[2] : undef,
+        fe_ev    = has_fe ? fe_norm[3] : undef,
+        has_fesu = has_fe && !is_undef(fe_su),
+        has_feeu = has_fe && !is_undef(fe_eu),
+        has_fesv = has_fe && !is_undef(fe_sv),
+        has_feev = has_fe && !is_undef(fe_ev),
+        // Edge (C0 discontinuity) support.  Singleton promotion: scalar → list.
+        ue_norm = is_undef(row_edges) ? undef : force_list(row_edges),
+        ve_norm = is_undef(col_edges) ? undef : force_list(col_edges),
+        has_ue = !is_undef(ue_norm) && len(ue_norm) > 0,
+        has_ve = !is_undef(ve_norm) && len(ve_norm) > 0
+    )
+    assert(is_list(points) && n_rows >= 2,
+           "nurbs_interp_surface: need at least 2 rows")
+    assert(n_cols >= 2,
+           "nurbs_interp_surface: need at least 2 columns")
+    assert(min([for (row = points) len(row)]) == max([for (row = points) len(row)]),
+           "nurbs_interp_surface: all rows must have the same number of columns")
+    assert(is_num(p_u) && p_u >= 1 && is_num(p_v) && p_v >= 1,
+           "nurbs_interp_surface: degree must be >= 1")
+    assert(method == "length" || method == "centripetal" || method == "dynamic"
+               || method == "foley" || method == "fang",
+           str("nurbs_interp_surface: method must be \"length\", \"centripetal\", \"dynamic\", \"foley\", or \"fang\", got \"", method, "\""))
+    assert(is_num(ep_u) && ep_u >= 0 && ep_u == floor(ep_u),
+           str("nurbs_interp_surface: extra_pts (u) must be a non-negative integer, got ", ep_u))
+    assert(is_num(ep_v) && ep_v >= 0 && ep_v == floor(ep_v),
+           str("nurbs_interp_surface: extra_pts (v) must be a non-negative integer, got ", ep_v))
+    assert(ep_u == 0 || p_u >= 2,
+           "nurbs_interp_surface: extra_pts in u-direction requires u-degree >= 2")
+    assert(ep_v == 0 || p_v >= 2,
+           "nurbs_interp_surface: extra_pts in v-direction requires v-degree >= 2")
+    assert(n_rows >= p_u + 1,
+           str("nurbs_interp_surface: need at least ", p_u+1,
+               " rows for u-degree ", p_u, ", got ", n_rows))
+    assert(n_cols >= p_v + 1,
+           str("nurbs_interp_surface: need at least ", p_v+1,
+               " columns for v-degree ", p_v, ", got ", n_cols))
+    assert(!(has_sud || has_eud || has_sun || has_eun || has_fesu || has_feeu || has_fe1_u || has_fe2_u) || !row_wrap,
+           "nurbs_interp_surface: u-direction derivative/normal/flat_end/flat_edges params require row_wrap=false")
+    assert(!(has_svd || has_evd || has_svn || has_evn || has_fesv || has_feev || has_fe1_v || has_fe2_v) || !col_wrap,
+           "nurbs_interp_surface: v-direction derivative/normal/flat_end/flat_edges params require col_wrap=false")
+    assert(!has_sud || len(first_row_deriv) == n_cols,
+           str("nurbs_interp_surface: first_row_deriv must have ", n_cols,
+               " entries (one per column), got ", is_undef(first_row_deriv) ? 0 : len(first_row_deriv)))
+    assert(!has_eud || len(last_row_deriv) == n_cols,
+           str("nurbs_interp_surface: last_row_deriv must have ", n_cols,
+               " entries (one per column), got ", is_undef(last_row_deriv) ? 0 : len(last_row_deriv)))
+    assert(!has_svd || len(first_col_deriv) == n_rows,
+           str("nurbs_interp_surface: first_col_deriv must have ", n_rows,
+               " entries (one per row), got ", is_undef(first_col_deriv) ? 0 : len(first_col_deriv)))
+    assert(!has_evd || len(last_col_deriv) == n_rows,
+           str("nurbs_interp_surface: last_col_deriv must have ", n_rows,
+               " entries (one per row), got ", is_undef(last_col_deriv) ? 0 : len(last_col_deriv)))
+    // normal1/normal2 assertions: apex edges only.
+    assert(!has_sn || (start_u_degen || start_v_degen),
+           "nurbs_interp_surface: normal1 requires a degenerate start edge (first row or first column must be all the same point)")
+    assert(!has_en || (end_u_degen || end_v_degen),
+           "nurbs_interp_surface: normal2 requires a degenerate end edge (last row or last column must be all the same point)")
+    assert(!has_sn || !(start_u_degen && start_v_degen),
+           "nurbs_interp_surface: normal1 is ambiguous — both u=0 and v=0 edges are degenerate; use first_row_deriv or first_col_deriv explicitly")
+    assert(!has_en || !(end_u_degen && end_v_degen),
+           "nurbs_interp_surface: normal2 is ambiguous — both u=1 and v=1 edges are degenerate; use last_row_deriv or last_col_deriv explicitly")
+    assert(!(has_sun && has_sud),
+           "nurbs_interp_surface: normal1 resolves to u-direction but first_row_deriv was also given")
+    assert(!(has_eun && has_eud),
+           "nurbs_interp_surface: normal2 resolves to u-direction but last_row_deriv was also given")
+    assert(!(has_svn && has_svd),
+           "nurbs_interp_surface: normal1 resolves to v-direction but first_col_deriv was also given")
+    assert(!(has_evn && has_evd),
+           "nurbs_interp_surface: normal2 resolves to v-direction but last_col_deriv was also given")
+    // flat_end1/flat_end2 assertions.
+    // Direction is determined by the clamped type; surface must be mixed clamped/closed.
+    assert(!has_fe1 || (row_wrap != col_wrap),
+           "nurbs_interp_surface: flat_end1 requires the surface to be clamped in one direction and closed in the other")
+    assert(!has_fe2 || (row_wrap != col_wrap),
+           "nurbs_interp_surface: flat_end2 requires the surface to be clamped in one direction and closed in the other")
+    assert(fe1_ok,
+           has_fe1_u
+           ? "nurbs_interp_surface: flat_end1 requires the first row (u=0 boundary) to be coplanar and non-collinear"
+           : "nurbs_interp_surface: flat_end1 requires the first column (v=0 boundary) to be coplanar and non-collinear. If your first row is coplanar, try row_wrap=true, col_wrap=false.")
+    assert(fe2_ok,
+           has_fe2_u
+           ? "nurbs_interp_surface: flat_end2 requires the last row (u=1 boundary) to be coplanar and non-collinear"
+           : "nurbs_interp_surface: flat_end2 requires the last column (v=1 boundary) to be coplanar and non-collinear. If your last row is coplanar, try row_wrap=true, col_wrap=false.")
+    assert(!(has_fe1_u && has_sud),
+           "nurbs_interp_surface: flat_end1 conflicts with first_row_deriv")
+    assert(!(has_fe2_u && has_eud),
+           "nurbs_interp_surface: flat_end2 conflicts with last_row_deriv")
+    assert(!(has_fe1_v && has_svd),
+           "nurbs_interp_surface: flat_end1 conflicts with first_col_deriv")
+    assert(!(has_fe2_v && has_evd),
+           "nurbs_interp_surface: flat_end2 conflicts with last_col_deriv")
+    assert(!(has_fe1_u && has_fesu),
+           "nurbs_interp_surface: flat_end1 conflicts with flat_edges[0] on same edge")
+    assert(!(has_fe2_u && has_feeu),
+           "nurbs_interp_surface: flat_end2 conflicts with flat_edges[1] on same edge")
+    assert(!(has_fe1_v && has_fesv),
+           "nurbs_interp_surface: flat_end1 conflicts with flat_edges[2] on same edge")
+    assert(!(has_fe2_v && has_feev),
+           "nurbs_interp_surface: flat_end2 conflicts with flat_edges[3] on same edge")
+    assert(!has_fe1 || is_num(flat_end1) || len(flat_end1) == (has_fe1_u ? n_cols : n_rows),
+           str("nurbs_interp_surface: flat_end1 list must have ", has_fe1_u ? n_cols : n_rows, " entries"))
+    assert(!has_fe2 || is_num(flat_end2) || len(flat_end2) == (has_fe2_u ? n_cols : n_rows),
+           str("nurbs_interp_surface: flat_end2 list must have ", has_fe2_u ? n_cols : n_rows, " entries"))
+    // flat_edges assertions.
+    assert(!has_fe || (is_list(fe_norm) && len(fe_norm) == 4),
+           "nurbs_interp_surface: flat_edges must be a scalar or 4-element list [first_row, last_row, first_col, last_col]")
+    assert(!(has_fesu && has_sud),
+           "nurbs_interp_surface: flat_edges[0] (first_row) conflicts with first_row_deriv")
+    assert(!(has_feeu && has_eud),
+           "nurbs_interp_surface: flat_edges[1] (last_row) conflicts with last_row_deriv")
+    assert(!(has_fesv && has_svd),
+           "nurbs_interp_surface: flat_edges[2] (first_col) conflicts with first_col_deriv")
+    assert(!(has_feev && has_evd),
+           "nurbs_interp_surface: flat_edges[3] (last_col) conflicts with last_col_deriv")
+    assert(!(has_fesu && has_sun),
+           "nurbs_interp_surface: flat_edges[0] (first_row) conflicts with normal1 on same edge")
+    assert(!(has_feeu && has_eun),
+           "nurbs_interp_surface: flat_edges[1] (last_row) conflicts with normal2 on same edge")
+    assert(!(has_fesv && has_svn),
+           "nurbs_interp_surface: flat_edges[2] (first_col) conflicts with normal1 on same edge")
+    assert(!(has_feev && has_evn),
+           "nurbs_interp_surface: flat_edges[3] (last_col) conflicts with normal2 on same edge")
+    assert(!has_fesu || !is_list(fe_su) || len(fe_su) == n_cols,
+           str("nurbs_interp_surface: flat_edges[0] scale list must have ", n_cols, " entries (one per column)"))
+    assert(!has_feeu || !is_list(fe_eu) || len(fe_eu) == n_cols,
+           str("nurbs_interp_surface: flat_edges[1] scale list must have ", n_cols, " entries (one per column)"))
+    assert(!has_fesv || !is_list(fe_sv) || len(fe_sv) == n_rows,
+           str("nurbs_interp_surface: flat_edges[2] scale list must have ", n_rows, " entries (one per row)"))
+    assert(!has_feev || !is_list(fe_ev) || len(fe_ev) == n_rows,
+           str("nurbs_interp_surface: flat_edges[3] scale list must have ", n_rows, " entries (one per row)"))
+    // Edge (C0) validation.
+    assert(!has_ue || !row_wrap,
+           "nurbs_interp_surface: row_edges requires row_wrap=false")
+    assert(!has_ve || !col_wrap,
+           "nurbs_interp_surface: col_edges requires col_wrap=false")
+    assert(!has_ue || (min(ue_norm) >= 1 && max(ue_norm) <= n_rows-2),
+           str("nurbs_interp_surface: row_edges indices must be interior (1..", n_rows-2, ")"))
+    assert(!has_ve || (min(ve_norm) >= 1 && max(ve_norm) <= n_cols-2),
+           str("nurbs_interp_surface: col_edges indices must be interior (1..", n_cols-2, ")"))
+    // row_edges / col_edges are compatible with same-direction boundary derivatives,
+    // normals, and flat_edges: the first/last segment of the edge-aware system
+    // carries the boundary derivative constraint.
+    let(
+        // Boundary plane for flat_edges=: cross product of two perimeter vectors.
+        // Guarded so degenerate geometry can't produce NaN when flat_edges is unused.
+        fe_e1    = has_fe ? (points[0][n_cols-1] - points[0][0])    : [1,0,0],
+        fe_e2    = has_fe ? (points[n_rows-1][0] - points[0][0])    : [0,1,0],
+        fe_N_raw = has_fe ? cross(fe_e1, fe_e2)                     : [0,0,1],
+        fe_N_hat = fe_N_raw / max(norm(fe_N_raw), 1e-15),
+        // Per-edge flat-outward derivative lists; undef when edge not active.
+        // Direction at each point: from adjacent interior point toward edge,
+        // projected into the boundary plane, then normalized and scaled.
+        flat_su_der = !has_fesu ? undef :
+            [for (j = [0:1:n_cols-1])
+                let(
+                    d      = points[1][j]       - points[0][j],
+                    d_flat = d - (d * fe_N_hat) * fe_N_hat,
+                    d_hat  = d_flat / max(norm(d_flat), 1e-15),
+                    s      = is_list(fe_su) ? fe_su[j] : fe_su
+                ) d_hat * s],
+        flat_eu_der = !has_feeu ? undef :
+            [for (j = [0:1:n_cols-1])
+                let(
+                    d      = points[n_rows-1][j] - points[n_rows-2][j],
+                    d_flat = d - (d * fe_N_hat) * fe_N_hat,
+                    d_hat  = d_flat / max(norm(d_flat), 1e-15),
+                    s      = is_list(fe_eu) ? fe_eu[j] : fe_eu
+                ) d_hat * s],
+        flat_sv_der = !has_fesv ? undef :
+            [for (k = [0:1:n_rows-1])
+                let(
+                    d      = points[k][1]       - points[k][0],
+                    d_flat = d - (d * fe_N_hat) * fe_N_hat,
+                    d_hat  = d_flat / max(norm(d_flat), 1e-15),
+                    s      = is_list(fe_sv) ? fe_sv[k] : fe_sv
+                ) d_hat * s],
+        flat_ev_der = !has_feev ? undef :
+            [for (k = [0:1:n_rows-1])
+                let(
+                    d      = points[k][n_cols-1] - points[k][n_cols-2],
+                    d_flat = d - (d * fe_N_hat) * fe_N_hat,
+                    d_hat  = d_flat / max(norm(d_flat), 1e-15),
+                    s      = is_list(fe_ev) ? fe_ev[k] : fe_ev
+                ) d_hat * s]
+    )
+    assert(!has_fesu || min([for (j = [0:1:n_cols-1]) let(d = points[1][j] - points[0][j], d_flat = d - (d * fe_N_hat) * fe_N_hat) norm(d_flat)]) > 1e-10,
+           "nurbs_interp_surface: flat_edges[0] (first_row) direction is perpendicular to the boundary plane at one or more points")
+    assert(!has_feeu || min([for (j = [0:1:n_cols-1]) let(d = points[n_rows-1][j] - points[n_rows-2][j], d_flat = d - (d * fe_N_hat) * fe_N_hat) norm(d_flat)]) > 1e-10,
+           "nurbs_interp_surface: flat_edges[1] (last_row) direction is perpendicular to the boundary plane at one or more points")
+    assert(!has_fesv || min([for (k = [0:1:n_rows-1]) let(d = points[k][1] - points[k][0], d_flat = d - (d * fe_N_hat) * fe_N_hat) norm(d_flat)]) > 1e-10,
+           "nurbs_interp_surface: flat_edges[2] (first_col) direction is perpendicular to the boundary plane at one or more points")
+    assert(!has_feev || min([for (k = [0:1:n_rows-1]) let(d = points[k][n_cols-1] - points[k][n_cols-2], d_flat = d - (d * fe_N_hat) * fe_N_hat) norm(d_flat)]) > 1e-10,
+           "nurbs_interp_surface: flat_edges[3] (last_col) direction is perpendicular to the boundary plane at one or more points")
+    assert(!has_fe || is_coplanar(concat(
+        points[0], points[n_rows-1],
+        [for (k = [1:1:n_rows-2]) points[k][0]],
+        [for (k = [1:1:n_rows-2]) points[k][n_cols-1]]), eps=1e-6),
+        "nurbs_interp_surface: flat_edges= requires all four boundary edges to be coplanar")
+    let(
+        // Compute effective derivative lists.
+        // Priority: normal1/normal2 (apex) > flat_end1/flat_end2 (coplanar) > flat_edges > explicit *_der=.
+        // Apex (all boundary points identical): fan outward from apex, user axis vector N.
+        //   End-edge apex tangents are negated because _apex_tangents() returns outward
+        //   (apex→ring) vectors; negating gives inward (ring→apex), making the surface
+        //   converge to the apex tip at the correct parametric direction.
+        // Coplanar (flat_end): _coplanar_inward_tangents() returns in-plane vectors
+        //   oriented toward the polygon interior using the polygon winding order.
+        //   Positive scale closes inward, negative flares outward.
+        //   flat_end1 result is negated: _coplanar_inward_tangents returns outward
+        //   for the start boundary; negating gives the correct inward direction.
+        //   flat_end2 uses the same function without negation (end boundary sign matches).
+        //   Periodic tangent differences used when the cross-direction is "closed".
+        first_row_deriv_eff = has_sun
+            ? _apex_tangents(normal1, points[0][0], points[1])
+            : has_fe1_u
+            ? [for (v = _coplanar_inward_tangents(flat_end1, points[0], points[1],
+                                        periodic=col_wrap)) -v]
+            : has_fesu ? flat_su_der
+            : first_row_deriv,
+        last_row_deriv_eff = has_eun
+            ? [for (v = _apex_tangents(normal2, points[n_rows-1][0], points[n_rows-2])) -v]
+            : has_fe2_u
+            ? _coplanar_inward_tangents(flat_end2, points[n_rows-1], points[n_rows-2],
+                                        periodic=col_wrap)
+            : has_feeu ? flat_eu_der
+            : last_row_deriv,
+        first_col_deriv_eff = has_svn
+            ? _apex_tangents(normal1, points[0][0],
+                             [for (k = [0:1:n_rows-1]) points[k][1]])
+            : has_fe1_v
+            ? [for (v = _coplanar_inward_tangents(flat_end1,
+                                        [for (k = [0:1:n_rows-1]) points[k][0]],
+                                        [for (k = [0:1:n_rows-1]) points[k][1]],
+                                        periodic=row_wrap)) -v]
+            : has_fesv ? flat_sv_der
+            : first_col_deriv,
+        last_col_deriv_eff = has_evn
+            ? [for (v = _apex_tangents(normal2, points[0][n_cols-1],
+                                       [for (k = [0:1:n_rows-1]) points[k][n_cols-2]])) -v]
+            : has_fe2_v
+            ? _coplanar_inward_tangents(flat_end2,
+                                        [for (k = [0:1:n_rows-1]) points[k][n_cols-1]],
+                                        [for (k = [0:1:n_rows-1]) points[k][n_cols-2]],
+                                        periodic=row_wrap)
+            : has_feev ? flat_ev_der
+            : last_col_deriv,
+        has_sud_eff = has_sud || has_sun || has_fesu || has_fe1_u,
+        has_eud_eff = has_eud || has_eun || has_feeu || has_fe2_u,
+        has_svd_eff = has_svd || has_svn || has_fesv || has_fe1_v,
+        has_evd_eff = has_evd || has_evn || has_feev || has_fe2_v
+    )
+    // row_edges / col_edges boundary-derivative segment-size checks.
+    // A derivative-carrying edge segment needs at least 3 rows/columns;
+    // with only 2 the degree-reduced knot vector becomes degenerate.
+    assert(!(has_ue && has_sud_eff && ue_norm[0] + 1 < 3),
+           !has_ue ? "" :
+           str("nurbs_interp_surface: row_edges=", ue_norm,
+               " creates a ", ue_norm[0]+1, "-row first segment (rows 0-",
+               ue_norm[0], ") which is too short to carry the start-u derivative constraint. ",
+               "Move the first row_edges index to at least 2"))
+    assert(!(has_ue && has_eud_eff && n_rows - last(ue_norm) < 3),
+           !has_ue ? "" :
+           str("nurbs_interp_surface: row_edges=", ue_norm,
+               " creates a ", n_rows - last(ue_norm), "-row last segment (rows ",
+               last(ue_norm), "-", n_rows-1, ") which is too short to carry the end-u derivative constraint. ",
+               "Move the last row_edges index to at most ", n_rows - 3))
+    assert(!(has_ve && has_svd_eff && ve_norm[0] + 1 < 3),
+           !has_ve ? "" :
+           str("nurbs_interp_surface: col_edges=", ve_norm,
+               " creates a ", ve_norm[0]+1, "-column first segment (columns 0-",
+               ve_norm[0], ") which is too short to carry the start-v derivative constraint. ",
+               "Move the first col_edges index to at least 2"))
+    assert(!(has_ve && has_evd_eff && n_cols - last(ve_norm) < 3),
+           !has_ve ? "" :
+           str("nurbs_interp_surface: col_edges=", ve_norm,
+               " creates a ", n_cols - last(ve_norm), "-column last segment (columns ",
+               last(ve_norm), "-", n_cols-1, ") which is too short to carry the end-v derivative constraint. ",
+               "Move the last col_edges index to at most ", n_cols - 3))
+    let(
+        // Averaged parameterization in each direction
+        u_params = _surface_params_u(points, method, row_wrap),
+        v_params = _surface_params_v(points, method, col_wrap),
+
+        // Per-row v-direction path lengths for scaling v-boundary tangents.
+        // Follows the curve convention: user passes normalized vectors; code
+        // scales by total chord length so a unit vector gives natural speed.
+        v_path_lens = [for (k = [0:1:n_rows-1]) path_length(points[k])],
+
+        // Per-column u-direction path lengths for scaling u-boundary tangents.
+        u_path_lens = [for (l = [0:1:n_cols-1])
+                           path_length([for (k = [0:1:n_rows-1]) points[k][l]])],
+
+        // ----- Build v-direction system -----
+        // When col_edges is active, precompute per-segment collocation systems.
+        // Otherwise use the standard (or derivative-extended) system.
+        v_edge_sys = has_ve
+                   ? _build_edge_systems(v_params, p_v, ve_norm,
+                                          has_sd=has_svd_eff,
+                                          has_ed=has_evd_eff,
+                                          extra_pts=ep_v, label="v") : undef,
+        v_sys   = has_ve ? undef
+                : (has_svd_eff || has_evd_eff)
+                ? _build_clamped_system_with_derivs(v_params, p_v, has_svd_eff, has_evd_eff, ep_v)
+                : _build_interp_system(v_params, p_v, col_wrap ? "closed" : "clamped", ep_v),
+        N_v     = has_ve ? undef : v_sys[0],
+        // When underdetermined (extra_pts), build regularization matrix for v.
+        M_v      = has_ve ? undef : len(N_v[0]),
+        N_rows_v = has_ve ? undef : len(N_v),
+        ns_v     = !has_ve && M_v > N_rows_v,
+        R_reg_v  = !ns_v ? undef
+                 : let(vk = v_sys[1],
+                       vint = !col_wrap
+                            ? [for (i = [1:1:len(vk)-2]) vk[i]]
+                            : undef,
+                       vU = !col_wrap
+                          ? _full_clamped_knots(vint, p_v)
+                          : _full_closed_knots(vk, M_v, p_v))
+                   _regularization_matrix(M_v, smooth_v, p_v, vU, periodic=col_wrap),
+
+        // ----- Pass 1: Interpolate rows in v-direction -----
+        // With col_edges: solve each row via edge-aware segmented system.
+        // Without: same A_v matrix for every row; only the RHS changes per row.
+        R_raw = has_ve
+            ? [for (k = [0:1:n_rows-1])
+                _solve_with_edges(v_edge_sys, points[k],
+                                  v_params, ve_norm, p_v,
+                    start_deriv = has_svd_eff
+                        ? _force_deriv_dim(first_col_deriv_eff[k], dim) * v_path_lens[k]
+                        : undef,
+                    end_deriv = has_evd_eff
+                        ? _force_deriv_dim(last_col_deriv_eff[k], dim) * v_path_lens[k]
+                        : undef,
+                    smooth = smooth_v)]
+            : undef,
+        R = has_ve
+            ? [for (r = R_raw) r[0]]
+            : [for (k = [0:1:n_rows-1])
+                let(rhs = concat(
+                        points[k],
+                        has_svd_eff
+                            ? [_force_deriv_dim(first_col_deriv_eff[k], dim) * v_path_lens[k]]
+                            : [],
+                        has_evd_eff
+                            ? [_force_deriv_dim(last_col_deriv_eff[k], dim) * v_path_lens[k]]
+                            : []))
+                ns_v ? _nullspace_solve(R_reg_v, N_v, rhs)
+                     : linear_solve(N_v, rhs)
+            ],
+
+        v_knots  = has_ve ? R_raw[0][1] : v_sys[1],
+        n_v_ctrl = len(R[0]),
+
+        // ----- Pass 1.5: Project u-boundary tangents into v-control space -----
+        // ∂S/∂u along u=0 or u=1 is given at the n_cols data v-positions.
+        // To use them as derivative RHS in the u-direction column solves, we
+        // must express them in the v B-spline control basis — done by solving
+        // the same v-system.  When col_edges is active, project through the
+        // edge-aware segmented system instead.
+        zero_v = repeat(0, dim),
+        _su_der_data = has_sud_eff
+            ? [for (l = [0:1:n_cols-1])
+                _force_deriv_dim(first_row_deriv_eff[l], dim) * u_path_lens[l]]
+            : undef,
+        _eu_der_data = has_eud_eff
+            ? [for (l = [0:1:n_cols-1])
+                _force_deriv_dim(last_row_deriv_eff[l], dim) * u_path_lens[l]]
+            : undef,
+        T_u_start = has_sud_eff
+                  ? has_ve
+                    ? _solve_with_edges(v_edge_sys, _su_der_data,
+                                        v_params, ve_norm, p_v,
+                          start_deriv = has_svd_eff ? zero_v : undef,
+                          end_deriv   = has_evd_eff ? zero_v : undef,
+                          smooth      = smooth_v)[0]
+                    : let(_rhs = concat(_su_der_data,
+                              has_svd_eff ? [zero_v] : [],
+                              has_evd_eff ? [zero_v] : []))
+                      ns_v ? _nullspace_solve(R_reg_v, N_v, _rhs)
+                           : linear_solve(N_v, _rhs)
+                  : undef,
+        T_u_end   = has_eud_eff
+                  ? has_ve
+                    ? _solve_with_edges(v_edge_sys, _eu_der_data,
+                                        v_params, ve_norm, p_v,
+                          start_deriv = has_svd_eff ? zero_v : undef,
+                          end_deriv   = has_evd_eff ? zero_v : undef,
+                          smooth      = smooth_v)[0]
+                    : let(_rhs = concat(_eu_der_data,
+                              has_svd_eff ? [zero_v] : [],
+                              has_evd_eff ? [zero_v] : []))
+                      ns_v ? _nullspace_solve(R_reg_v, N_v, _rhs)
+                           : linear_solve(N_v, _rhs)
+                  : undef,
+
+        // ----- Build u-direction system -----
+        // When row_edges is active, precompute per-segment systems.
+        u_edge_sys = has_ue
+                   ? _build_edge_systems(u_params, p_u, ue_norm,
+                                          has_sd=has_sud_eff,
+                                          has_ed=has_eud_eff,
+                                          extra_pts=ep_u, label="u") : undef,
+        u_sys   = has_ue ? undef
+                : (has_sud_eff || has_eud_eff)
+                ? _build_clamped_system_with_derivs(u_params, p_u, has_sud_eff, has_eud_eff, ep_u)
+                : _build_interp_system(u_params, p_u, row_wrap ? "closed" : "clamped", ep_u),
+        N_u     = has_ue ? undef : u_sys[0],
+        // When underdetermined (extra_pts), build regularization matrix for u.
+        M_u      = has_ue ? undef : len(N_u[0]),
+        N_rows_u = has_ue ? undef : len(N_u),
+        ns_u     = !has_ue && M_u > N_rows_u,
+        R_reg_u  = !ns_u ? undef
+                 : let(uk = u_sys[1],
+                       uint = !row_wrap
+                            ? [for (i = [1:1:len(uk)-2]) uk[i]]
+                            : undef,
+                       uU = !row_wrap
+                          ? _full_clamped_knots(uint, p_u)
+                          : _full_closed_knots(uk, M_u, p_u))
+                   _regularization_matrix(M_u, smooth_u, p_u, uU, periodic=row_wrap),
+
+        // ----- Pass 2: Interpolate columns in u-direction -----
+        // Transpose R so each entry is a column of intermediate points.
+        R_T  = [for (j = [0:1:n_v_ctrl-1])
+                    [for (k = [0:1:n_rows-1]) R[k][j]]],
+
+        // With row_edges: solve each column via edge-aware segmented system.
+        // Without: add u-tangent constraint rows to the RHS for each column j.
+        P_T_raw = has_ue
+            ? [for (j = [0:1:n_v_ctrl-1])
+                _solve_with_edges(u_edge_sys, R_T[j],
+                                  u_params, ue_norm, p_u,
+                    start_deriv = has_sud_eff ? T_u_start[j] : undef,
+                    end_deriv   = has_eud_eff ? T_u_end[j]   : undef,
+                    smooth      = smooth_u)]
+            : undef,
+        P_T  = has_ue
+            ? [for (r = P_T_raw) r[0]]
+            : [for (j = [0:1:n_v_ctrl-1])
+                let(rhs = concat(
+                        R_T[j],
+                        has_sud_eff ? [T_u_start[j]] : [],
+                        has_eud_eff ? [T_u_end[j]]   : []))
+                ns_u ? _nullspace_solve(R_reg_u, N_u, rhs)
+                     : linear_solve(N_u, rhs)
+            ],
+
+        u_knots  = has_ue ? P_T_raw[0][1] : u_sys[1],
+
+        // Transpose back to get the final control point grid.
+        n_u_ctrl = len(P_T[0]),
+        P        = [for (i = [0:1:n_u_ctrl-1])
+                        [for (j = [0:1:n_v_ctrl-1]) P_T[j][i]]]
+    )
+    [[row_wrap ? "closed" : "clamped", col_wrap ? "closed" : "clamped"],
+     [p_u, p_v], P, [u_knots, v_knots], undef, undef,
+     [u_params, v_params]];
+
+
+module nurbs_interp_surface(points, degree, splinesteps=16,
+                            method="centripetal",
+                            row_wrap=false, col_wrap=false,
+                            style="default", reverse=false, triangulate=false,
+                            caps=undef, cap1=undef, cap2=undef,
+                            first_row_deriv=undef, last_row_deriv=undef,
+                            first_col_deriv=undef, last_col_deriv=undef,
+                            normal1=undef, normal2=undef,
+                            flat_end1=undef, flat_end2=undef,
+                            flat_edges=undef,
+                            row_edges=undef, col_edges=undef,
+                            extra_pts=0, smooth=3,
+                            data_color="red", data_size=0,
+                            atype="hull", convexity=10, cp="centroid", anchor="origin", spin=0, orient=UP
+)
+   {
+    result = nurbs_interp_surface(points, degree,
+                 method=method, row_wrap=row_wrap, col_wrap=col_wrap,
+                 first_row_deriv=first_row_deriv, last_row_deriv=last_row_deriv,
+                 first_col_deriv=first_col_deriv, last_col_deriv=last_col_deriv,
+                 normal1=normal1, normal2=normal2,
+                 flat_end1=flat_end1, flat_end2=flat_end2,
+                 flat_edges=flat_edges,
+                 row_edges=row_edges, col_edges=col_edges,
+                 extra_pts=extra_pts, smooth=smooth);
+    nurbs_vnf(result, splinesteps=splinesteps, style=style,
+                             reverse=reverse, triangulate=triangulate,
+                             caps=caps, cap1=cap1, cap2=cap2, convexity=convexity, atype=atype, anchor=anchor, spin=spin, orient=orient) children();
+    if (data_size > 0)
+        color(data_color)
+            for (row = points)
+                for (pt = row)
+                    translate(pt) sphere(r=data_size, $fn=16);
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+//  Code after this point was written by Claude to provide interpolation.
+//  Algorithm from Piegl & Tiller, "The NURBS Book", Chapters 2 & 9.
+//
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Internal B-spline Basis Functions
 
@@ -1743,1203 +3067,6 @@ function _elevate_once(ctrl, p, U) =
 
 
 
-// Section: NURBS Interpolation
-
-
-// Function: nurbs_interp()
-// Synopsis: Finds a NURBS curve passing through a point list with optional derivative constraints.
-// Topics: NURBS Curves, Interpolation
-// See Also: nurbs_curve(), debug_nurbs(), debug_nurbs_interp()
-//
-// Usage:
-//   nurbs_param = nurbs_interp(points, degree, [method=], [closed=], [start_deriv=], [end_deriv=], [curvature=], [start_curvature=], [end_curvature=], [corners=], [deriv=], [extra_pts=], [smooth=]);
-//
-// Description:
-//   Given a list of data points and a NURBS degree, computes a curve of the specified degree
-//   that passes exactly through every data point.  The computed curve always has
-//   uniform weights, but irregularly spaced knots, so it is actually a non-uniform B-spline.  
-//   Data points may 2D or any higher dimension.  Returns a NURBS parameter list of the form
-//   `[type, degree, control_points, knots, undef, undef, u]` that can be
-//   passed directly to {{nurbs_curve()}} and other NURBS functions. The extra return value `u`,
-//   described in detail below, enables you to locate your input points in the computed spline
-//   .
-//   When `closed=false` (the default) the output is a "clamped" NURBS.  
-//   When `closed=true`, the interpolation treats the data points as a loop and produces a
-//   curve that is smooth at the closing point.  The output will be a "closed" NURBS (unless you
-//   specify corners as described below).  
-//   If you instead duplicate the closing point and set `closed=false` then the
-//   result will have a corner at the closing point. 
-//   .
-//   **Parameterization** (`method=`)
-//   .
-//   In order to solve the interpolation problem, the algorithm first chooses
-//   the NURBS parameter value `u[k]` that will correspond to each `points[k]`. 
-//   This parametrization step significantly affects the shape of the output curve, particularly when the
-//   data points are not evenly spaced.  The following methods are supported:
-//   .
-//   - `"length"` — Base parameters values on the chord length, which is distance between the consecutive data points.
-//     Best when data points are fairly evenly spaced.  
-//   - `"centripetal"` (default) — Base parameters values on the square root of the chord length. (Lee 1989).
-//   - `"dynamic"` — like centripetal, but the exponent 0.5 is replaced
-//     by a per-chord value chosen based on local spacing variation.  Long chords
-//     get a smaller exponent and short chords a larger one, compressing the
-//     influence of outliers.  Chord lengths are normalized, which makes the method scale
-//     invariant and prevents misbehavior at extreme scales.  Scaling is not given in the original reference. (Balta et al. 2020).
-//   - `"foley"` — centripetal base, augmented by corrections at each point that
-//     are proportional to the local turn angle.  Sharp bends pull parameter values
-//     closer together, which tends to reduce overshoot at corners (Foley & Neilson 1987).
-//   - `"fang"` — centripetal base, augmented by a correction based on the radius
-//     of the osculating circle at each point.  Said to handles mixed straight-and-curved
-//     segments particularly well.  This method is NOT scale invariant, so results will
-//     change if you scale your input data. (Fang & Hung 2013).
-//   .
-//   The other required input to the interpolation is the location of the knots.
-//   We place knots using a moving average of `degree` consecutive parameter values, which links
-//   the knots to the local parameter spacing.  A consequence of this process for selection
-//   of the parameters and knot locations is that even if your input data has symmetry it is
-//   likely that the symmetry will be broken in the output.  For closed curves, another
-//   consequence is that the resulting curve will depend on which point is chosen as the
-//   starting point for the interpolation.  The algorithm chooses a starting point 
-//   that is expected to provide the best behaved interpolation curve.  Examining the
-//   knot positions with {{debug_nurbs_interp()}} may help you understand unexpected behavior
-//   you observe in the output.  If your curve does not
-//   behave as desired you may be able to adjust it by imposing additional constraints or
-//   by giving it more freedom using `extra_pts`.              
-//   .
-//   **Derivative constraints** (`deriv=`, `start_deriv=`, `end_deriv=`)
-//   .
-//   `deriv[k]` specifies the tangent direction and speed the curve must have
-//   as it passes through `points[k]`.  The length of `deriv[k]` gives the speed
-//   as a multiple of `path_length(points)` which means a unit vector gives a natural
-//   speed that is a good starting point.  
-//   The speed has a big effect on the shape of the curve, so if the local shape is
-//   not as you desire you should try increasing it, which will make the curve around
-//   the point flatter or decreasing it, which will make the curve more pointy. 
-//   Set `deriv[k] = undef` to leave point `k` unconstrained.  
-//   If you only want to set the derivative at the ends of a "clamped" curve you can use
-//   `start_deriv=` and `end_deriv=`, which set 
-//   `deriv[0]` and `last(deriv)` without the need to provide a list of undefs for all the interior points. 
-//   .
-//   **Curvature constraints** (`curvature=`, `start_curvature=`, `end_curvature=`)
-//   .
-//   The curvature at a point measures how tightly a curve bends.
-//   When a point has curvature $\kappa$ then a circle with radius $1/\kappa$ 
-//   locally matches the curve at that point so both its first and second derivatives agree.
-//   This matched circle is called the osculating circle.  When you set `curvature[k]` this
-//   constrains the curvature at `points[k]`.  Every curvature-constrained point **must** also have a derivative constraint
-//   at the same index.  Curvature constraints require a degree of at least 2.  
-//   .
-//   In general curvature constraints require the curvature **vector**, which
-//   points in the direction of the osculating circle and has length equal to the curvature. 
-//   The curvature vector must be orthogonal to the tangent vector at the point;
-//   when you specify a curvature vector any component parallel to the tangent is removed.
-//   The magnitude of the curvature is taken as the magnitude of your original input vector,
-//   even if subtracting the tangent component changes its length.  
-//   For 2D curves you can also provide curvature as a scalar, with the sign indicating direction. 
-//   (positive = left/CCW,  negative = right/CW).
-//   .
-//   You can specify the curvature at the ends of "clamped" curves using
-//   `start_curvature=` and `end_curvature=`, which specify `curvature[0]`
-//   and `last(curvature)` without the need to create undefs for all the interior points. 
-//   .
-//   **Corners** (`corners=`)
-//   .
-//   `corners=` is a list of interior point indices where the curve has
-//   a corner, a discontinuity in the derivative.  You can also specify a corner
-//   at point `k` by setting `deriv[k]=NAN`.  When you request corners, the
-//   algorithm chops up the input data into separate clamped splines that run from corner
-//   to corner.  When `closed=true` this results in a "clamped" output spline, and the curve
-//   will start at one of your corner points.              
-//   If you place corners close together, the effective degree of the short segment
-//   in between the corners may be reduced.  These curve sections are assembled into a single
-//   NURBS so this process is transparent to the user.  A limitation is that you cannot control
-//   the dervatives of the two segments that meet at a corner.  If you need to do this you
-//   must construct your own sequence of clamped interpolations.  
-//   .
-//   **Extra control points** (`extra_pts=`, `smooth=`)
-//   .
-//   By default, the solver uses exactly as many control points as are needed to
-//   satisfy the interpolation and constraint conditions, which gives a unique
-//   solution.  This unique solution may be badly behaved, with undesirable oscillations.
-//   You can improve the behavior by requesting extra points.  
-//   Specifying `extra_pts=N` inserts `N` additional control points and knots, making the
-//   system underdetermined: infinitely many curves pass through the data points and satisfy 
-//   the constraints.  The solver picks the one that satisfies
-//   a smoothness criterion specified by `smooth=`:
-//   .
-//   - `smooth=1` — minimises the sum of squared differences between consecutive
-//     control points.  This tends to keep the control polygon short and reduces
-//     large-scale variation in the curve.
-//   - `smooth=2` — minimises the sum of squared second differences of the control
-//     points.  This penalises bending in the control polygon, generally producing
-//     a fairer, less wiggly curve than `smooth=1`.
-//   - `smooth=3` (default) — minimises the integrated squared second derivative
-//     $\int \|\mathbf{C}''(t)\|^2 \, dt$, often called the *bending energy* of
-//     the curve.  Unlike `smooth=2`, which only looks at the control polygon,
-//     this criterion acts directly on the curve shape and is the most
-//     mathematically principled choice for smooth interpolation.  Requires
-//     `degree >= 2`.
-//   .
-//   The number of extra control points cannot exceed the number of knot spans.
-//   If you request too many, the number is capped and a warning is displayed.
-//   With `corners=`, the curve is split into independent clamped segments and 
-//   the extra points are distributed across eligible segments proportionally
-//   to their control-point count, rounding up, so the total may
-//   exceed the requested number but will never be less.  A segment is eligible when
-//   its effective degree is 3 or higher, or when it is degree 2 with `smooth=1`.
-//   .
-//   **Locating points in the spline** — In order to locate your original data
-//   points in the spline you need the `u` parameter value that you
-//   can pass to {{nurbs_curve()}}.  The last return value `u` is a list
-//   where `u[k]` is the NURBS parameter at which the curve passes through
-//   `points[k]`.
-//   .
-//   **Smoothness** &mdash; The smoothness of B-splines is determined by the
-//   degree.  If you request a degree $p$ spline then it will be $C^{p-1}$ at
-//   knot points and $C^\infty$ everywhere else.  If you request corners then 
-//   these are points where the curve is not differentiable; corners may
-//   also divide the curve into small segments that lack sufficient points
-//   to support an interpolation at your requested degree: a degree $p$ interpolation
-//   requires $p+1$ points.  In this case, the intepolation is performed at a lower
-//   degree and elevated, which means it will be less smooth at knots.  
-//
-// Arguments:
-//   points = List of data points to interpolate (2D or any higher dimension).
-//   degree = Degree of the NURBS.  Degree 3 (cubic) is the most common choice.
-//   ---
-//   method    = Parameterization method: `"length"`, `"centripetal"`, `"dynamic"`, `"foley"`, or `"fang"`. Default: `"centripetal"`
-//   closed    = If true treat point list as a loop .  Default: `false`
-//   start_deriv    = If `closed=false`, gives the tangent vector at the first point
-//   end_deriv      = If `closed=false`, gives tangent vector at the last point.  
-//   deriv     = List of tangent vector constraints for every point, NAN at corners or undef at unconstrained points.  Cannot be combined with `start_deriv=`/`end_deriv=`.
-//   start_curvature = If `closed=false` gives curvature at first point.  (Requires matching derivative.)
-//   end_curvature   = If `closed=false` gives curvature at last point.  (Requires matching derivative.)
-//   curvature = List of curvature constraints for every point, or undef at unconstrained points.  Each curvature constraint must be paired with a derivative constraint at the same point.  Cannot be combined with `start_curvature=`/`end_curvature=`. 
-//   corners   = List of interior point indices where corners are permitted.  Equivalent to setting entries of `deriv` to NAN.
-//   extra_pts = Number of extra control points to add to provide additional freedom to control undesirable oscillations.  Default: 0
-//   smooth    = Smoothness criterion used with extra control points.  Set to 1 (minimize control-polygon length), 2 (minimize control-polygon bending) or 3 (minimize curve bending energy).   Default: 3
-//
-// Example(2D,NoAxes): Clamped curve (default)
-//   data = [[0,0], [10,30], [25,15], [40,35], [60,10], [80,25]];
-//   debug_nurbs_interp(data, 3);
-//
-// Example(2D,NoAxes): Closed curve (debug view)
-//   // Do NOT repeat the first point at the end.
-//   data = [[0,0], [30,50], [60,40], [80,10], [50,-20], [20,-10]];
-//   debug_nurbs_interp(data, 3, closed=true);
-
-
-
-
-
-function nurbs_interp(points, degree, method="centripetal", closed=false,
-                      deriv=undef, start_deriv=undef, end_deriv=undef,
-                      curvature=undef, start_curvature=undef, end_curvature=undef,
-                      corners=undef, extra_pts=0, smooth=3) =
-    assert(is_path(points, undef) && len(points) >= 2,
-           "nurbs_interp: points must be a path (list of same-dimension vectors) with at least 2 points")
-    assert(is_num(degree) && degree >= 1,
-           "nurbs_interp: degree must be >= 1")
-    assert(method == "length" || method == "centripetal" || method == "dynamic"
-               || method == "foley" || method == "fang",
-           str("nurbs_interp: method must be \"length\", \"centripetal\", \"dynamic\", \"foley\", or \"fang\", got \"", method, "\""))
-    assert(is_undef(deriv) || (is_undef(start_deriv) && is_undef(end_deriv)),
-           "nurbs_interp: use deriv= OR start_deriv=/end_deriv=, not both")
-    assert(!closed || (is_undef(start_deriv) && is_undef(end_deriv)),
-           "nurbs_interp: start_deriv/end_deriv only supported for closed=false")
-    assert(is_undef(deriv) || len(deriv) == len(points),
-           str("nurbs_interp: deriv= must have same length as points (",
-               len(points), " points, ", is_undef(deriv) ? 0 : len(deriv), " deriv)"))
-    assert(is_undef(curvature) || (is_undef(start_curvature) && is_undef(end_curvature)),
-           "nurbs_interp: use curvature= OR start_curvature=/end_curvature=, not both")
-    assert(!closed || (is_undef(start_curvature) && is_undef(end_curvature)),
-           "nurbs_interp: start_curvature=/end_curvature= only supported for closed=false")
-    assert(is_undef(curvature) || len(curvature) == len(points),
-           str("nurbs_interp: curvature= must have same length as points (",
-               len(points), " points, ", is_undef(curvature) ? 0 : len(curvature), " curvature)"))
-    assert(is_undef(corners) || (
-               !closed
-                 ? (min(corners) >= 1 && max(corners) <= len(points)-2)
-                 : (min(corners) >= 0 && max(corners) <= len(points)-1)),
-           str("nurbs_interp: corners= indices must be ",
-               !closed ? str("interior (1..", len(points)-2, ")")
-                       : str("valid point indices (0..", len(points)-1, ")")))
-    assert(is_num(extra_pts) && extra_pts >= 0 && extra_pts == floor(extra_pts),
-           str("nurbs_interp: extra_pts must be a non-negative integer, got ", extra_pts))
-    assert(extra_pts == 0 || degree >= 2,
-           "nurbs_interp: extra_pts requires degree >= 2")
-    assert(smooth == 1 || smooth == 2 || smooth == 3,
-           str("nurbs_interp: smooth must be 1, 2, or 3, got ", smooth))
-    assert(smooth != 3 || degree >= 2,
-           "nurbs_interp: smooth=3 (bending energy) requires degree >= 2")
-    let(
-        type     = closed ? "closed" : "clamped",
-        raw = type == "clamped"
-            ? _nurbs_interp_clamped(points, degree, method,
-                                     deriv, start_deriv, end_deriv,
-                                     curvature, start_curvature, end_curvature,
-                                     corners, extra_pts, smooth)
-            : _nurbs_interp_closed(points, degree, method, deriv, curvature,
-                                    corners, extra_pts, smooth),
-        eff_type = is_string(raw[3]) ? raw[3] : type,
-        rot      = raw[2],
-        n        = len(points),
-        u        = type == "closed" && !is_string(raw[3])
-                   ? list_rotate(
-                         _interp_params(list_rotate(points, rot), method, closed=true),
-                         -rot)
-                   : type == "closed"
-                     ? let(
-                           aug_pts    = [for (k = [0:1:n-1]) points[(k + rot) % n], points[rot]],
-                           aug_params = _interp_params(aug_pts, method)
-                       )
-                       [for (j = [0:1:n-1]) aug_params[(j - rot + n) % n]]
-                   : _interp_params(points, method)
-    )
-    [eff_type, degree, raw[0], raw[1], undef, undef, u];
-
-
-
-// Section: Debug / Visualization
-
-// Module: debug_nurbs_interp()
-// Synopsis: Interpolates a NURBS using {{nurbs_interp()}} and displays the curve with informative overlays.
-// Topics: NURBS Curves, Interpolation, Debugging
-// See Also: nurbs_interp(), debug_nurbs()
-//
-// Usage:
-//   debug_nurbs_interp(points, degree, [splinesteps=], [method=], [closed=], [deriv=], [start_deriv=], [end_deriv=], [curvature=], [start_curvature=], [end_curvature=], [corners=], [extra_pts=], [smooth=], [width=], [size=], [data_size=], [data_index=], [show_control=], [control_index=], [show_knots=], [show_deriv=], [show_curvature=]);
-//
-// Description:
-//   Calls {{nurbs_interp()}} with the supplied arguments and displays the
-//   resulting curve together with a informative overlays.  All interpolation
-//   arguments are passed through unchanged; see {{nurbs_interp()}} for their 
-//   descriptions.  The overlays are:
-//   .
-//   - **Data points** — red circles (2D) or spheres (3D) at each input point.
-//     When `data_index=true` (the default), the point index is printed in red next
-//     to its marker.  Set `data_size=0` to suppress display of the data point dots.
-//   - **Derivative constraints** — a black arrow at each derivative constrained data point.
-//     Arrow direction and length reflect the constraint vector, scaled to the average
-//     point spacing.  When the derivative is NAN or a point has a corner, this is shown
-//     using a black diamond.  Shown by default: set `show_deriv=false` to hide.
-//   - **Curvature constraints** — a transparent green overlay at each curvature-constrained point.
-//     In 2D the overlay is the osculating circle.  In 3D the overlay is a cylinder created
-//     from the 3D osculating circle.  Zero curvature appears as a short green bar.
-//     Shown by default: Set `show_curvature=false` to hide.
-//   - **Knots** — Green crosses mark each knot position.  Not shown by default.  
-//     Enable with `show_knots=true`.
-//   - **Control points and polygon** — If you set `show_control=true` then a gray control polygon
-//     Is displayed.  If you additionally set `control_index=true` then blue control-point
-//     index labels appear.
-//
-// Arguments:
-//   points  = List of 2-D or 3-D data points to interpolate through.
-//   degree  = NURBS degree.
-//   splinesteps     = Steps per knot span for curve rendering.  Default: `16`
-//   ---
-//   method          = Parameterization method; see {{nurbs_interp()}}.  Default: `"centripetal"`
-//   closed          = If true, interpolate as a closed loop; if false, interpolate as clamped.  Default: `false`
-//   deriv           = Per-point derivative constraints; see {{nurbs_interp()}}.  Default: `undef`
-//   start_deriv     = Derivative at first point.  Default: `undef`
-//   end_deriv       = Derivative at last point.  Default: `undef`
-//   curvature       = Per-point curvature constraints; see {{nurbs_interp()}}.  Default: `undef`
-//   start_curvature = Curvature at first point.  Default: `undef`
-//   end_curvature   = Curvature at last point.  Default: `undef`
-//   corners         = Corner indices; see {{nurbs_interp()}}.  Default: `undef`
-//   extra_pts       = Extra control points; see {{nurbs_interp()}}.  Default: `0`
-//   smooth          = Smoothness criterion for `extra_pts`; see {{nurbs_interp()}}.  Default: `3`
-//   width           = Stroke width for the curve.  Arrows and other overlays scale with this.  Default: `1`
-//   size            = Text size for labels on control points and data points.  Default: `3*width`
-//   data_size       = Radius of the red data-point markers.  Set to `0` to hide data points and their labels.  Default: equal to `width`
-//   data_index      = Show index labels next to each data point.  Only shown when `data_size > 0`.  Default: `true`
-//   show_control    = Show the control polygon.  Default: `false`
-//   control_index   = Show control-point index labels if `show_control=true`.  Default: `false`
-//   show_knots      = Show knot position markers on the curve.  Default: `false`
-//   show_deriv      = Show derivative-constraint arrows.  Default: `true`
-//   show_curvature  = Show curvature-constraint circles / disks.  Default: `true`
-
-module debug_nurbs_interp(points, degree, splinesteps=16, method="centripetal",
-                          closed=false, deriv=undef,
-                          start_deriv=undef, end_deriv=undef,
-                          curvature=undef, start_curvature=undef, end_curvature=undef,
-                          corners=undef, extra_pts=0, smooth=3,
-                          width=1, size=undef, data_size=undef,
-                          show_control=false, show_knots=false,
-                          show_deriv=true, show_curvature=true,
-                          control_index=false, data_index=true) {
-    result = nurbs_interp(points, degree, method=method,
-                          closed=closed, deriv=deriv,
-                          start_deriv=start_deriv, end_deriv=end_deriv,
-                          curvature=curvature, start_curvature=start_curvature,
-                          end_curvature=end_curvature, corners=corners,
-                          extra_pts=extra_pts, smooth=smooth);
-
-    np          = len(points);
-    dim         = len(points[0]);
-    is2d        = (dim == 2);
-    ds          = default(data_size, width);
-    sz          = default(size, 3 * width);
-    ctrl        = result[2];
-    arrow_scale = path_length(points) / np;
-
-    // Helpers project BOSL2 direction constants and pad dimensions automatically.
-    eff_der  = _merge_deriv_list(np-1, deriv, dim=dim, start_deriv=start_deriv, end_deriv=end_deriv);
-    eff_curv = _merge_curv_list(np-1, curvature, dim=dim, start_curvature=start_curvature, end_curvature=end_curvature);
-
-    // --- Curve, control polygon, knot markers (delegated to debug_nurbs) ---
-    debug_nurbs(result, splinesteps=splinesteps, width=width, size=sz,
-                show_knots=show_knots, show_control=show_control,
-                show_index=control_index);
-
-    // --- Corner marks (NaN-deriv corners + explicit corners= indices) ---
-    // 2D: rotated square stroke.  3D: octahedron wireframe.
-    nan_corner_idxs = is_undef(eff_der) ? []
-                    : [for (i = [0:1:np-1]) if (!is_undef(eff_der[i]) && is_nan(eff_der[i])) i];
-    explicit_corner_idxs = default(corners, []);
-    all_corner_idxs = deduplicate(sort(concat(nan_corner_idxs, explicit_corner_idxs)));
-    for (i = all_corner_idxs)
-        color("black")
-            translate(points[i])
-                if (is2d)
-                    zrot(45) stroke(rect(3.5*width*ds), width=width/2, closed=true);
-                else
-                    vnf_wireframe(octahedron(size=5*width), width=width/4);
-
-    // --- Derivative arrows (black, half width, arrow2 endcap) ---
-    // Length = norm(eff_der[i]) * arrow_scale: preserves relative magnitudes;
-    // arrow_scale = path_length(points)/np gives a geometry-relative baseline.
-    if (show_deriv && !is_undef(eff_der))
-        for (i = [0:1:np-1])
-            if (!is_undef(eff_der[i]) && !is_nan(eff_der[i]) && norm(eff_der[i]) > 1e-12)
-                color("black")
-                    stroke([points[i], points[i] + eff_der[i] * arrow_scale],
-                           width=width/2,
-                           endcap1="butt", endcap2="arrow2");
-
-    // --- Data points and index labels ---
-    if (ds > 0)
-        color("red")
-            move_copies(points) {
-                if (is2d) circle(r=ds, $fn=16);
-                else      sphere(r=ds, $fn=16);
-                if (data_index)
-                    if (is2d)
-                        fwd(2*ds) text(text=str($idx), size=sz, anchor=BACK);
-                    else
-                        rot($vpr) back(ds + sz/3) text3d(text=str($idx), size=sz, anchor=CENTER);
-            }
-
-    // --- Curvature overlays (rendered last so transparent objects don't occlude dots) ---
-    // Validator already asserted every curvature-constrained point has a derivative,
-    // so eff_der[i] is always defined and non-NaN here.
-    if (show_curvature && !is_undef(eff_curv))
-        color([0,1,0,0.1])
-        for (i = [0:1:np-1])
-            if (!is_undef(eff_curv[i])) {
-                // cv is either a signed scalar (2D) or a dim-projected vector.
-                cv    = eff_curv[i];
-                kn    = is_num(cv) ? abs(cv) : norm(cv);
-                T_hat = unit(eff_der[i]);
-                if (kn < 1e-12) {
-                    // Zero curvature: fixed-length segment (0.6*arrow_scale) along
-                    // the exact derivative direction.
-                    half = 0.3 * arrow_scale;
-                    stroke([points[i] - T_hat * half,
-                            points[i] + T_hat * half],
-                           width=2*width, endcaps="butt");
-                } else {
-                    // Non-zero curvature: osculating circle (2D) or cylinder (3D).
-                    // N_hat: unit principal normal — component of cv perpendicular to T_hat.
-                    N_hat = is_num(cv)
-                        ? // Signed scalar (2D): rotate T_hat 90° left or right by sign(cv).
-                          sign(cv) * [-T_hat[1], T_hat[0]]
-                        : // Vector: strip tangential component via vector_perp, then unit.
-                          unit(vector_perp(T_hat, cv));
-                    r   = 1 / kn;
-                    ctr = points[i] + N_hat * r;
-                    // move(ctr) applies to both 2D and 3D branches.
-                    move(ctr)
-                        if (is2d) {
-                            circle(r=r);
-                        } else {
-                            // Cylinder in the osculating plane: axis along binormal B̂ = T̂ × N̂.
-                            // cyl(orient=binom) aligns the cylinder axis to B̂ without rot().
-                            binom = cross(T_hat, N_hat);
-                            cyl(h=width, r=r, orient=binom);
-                        }
-                }
-            }
-}
-
-
-
-// Section: NURBS Surface Interpolation
-
-// Function&Module: nurbs_interp_surface()
-// Synopsis: Returns a NURBS surface that passes through a grid of 3D data points.
-// SynTags: Geom
-// Topics: NURBS Surfaces, Interpolation
-// See Also: nurbs_vnf(), nurbs_interp()
-//
-// Usage: As a function, returns a NURBS parameter list:
-//   nurbs_param = nurbs_interp_surface(points, degree, [method=], [row_wrap=], [col_wrap=], [normal1=], [normal2=], [flat_edges=], [flat_end1=], [flat_end2=], [row_edges=], [col_edges=], [extra_pts=], [smooth=], [first_row_deriv=], [last_row_deriv=], [first_col_deriv=], [last_col_deriv=]);
-// Usage: As a module, renders the surface directly:
-//   nurbs_interp_surface(points, degree, [splinesteps=], [row_wrap=], [col_wrap=], [method=], [extra_pts=], [smooth=], ...) CHILDREN;
-// Description:
-//   Finds the control points and knot vectors for a NURBS surface of the specified degree that passes
-//   exactly through every data point in a grid of 3D points.  The result has
-//   uniform weights but non-uniform knots so it is actually a non-uniform B-spline.
-//   When called as a function, the return value is a NURBS parameter list
-//   `[type, degree, ctrl_grid, knots, undef, undef, uv]` that can be passed
-//   directly to `{{nurbs_vnf()}}`.  The extra return value `uv`,
-//   described in detail below, enables you to locate your input points in the computed spline
-//   When called as a module, renders the NURBS surface as geometry.
-//   .
-//   Several of the parameters that correspond to parameters for {{nurbs_interp()}} 
-//   can be given as either a scalar or 2-vector.  When you give a 2-vector the
-//   first value applies along the first index of your point data, i.e. from row
-//   to row, or along columns.  The second value applies along the second index,
-//   i.e. within rows.  
-//   .
-//   Setting `row_wrap=true` smoothly connects the first and last rows in a loop,  
-//   and `col_wrap=true` smoothly joins the first and last columns.  Both false (the default) gives a
-//   surface with four edges.  One true gives a tube; both true gives a torus.
-//   A tube by itself is not a valid closed manifold in OpenSCAD; you can make it valid by adding caps or
-//   you can close it into a ball by specifying degenerate edges where the entire edge collapses to
-//   one identical point. 
-//   .
-//   **Boundary constraints**
-//   .
-//   Flat boundary (`row_wrap=false, col_wrap=false`) — `flat_edges=`.  Applies when
-//   all four surface edges are coplanar.  Set `flat_edges` to a 4-element list
-//   `[first_row, last_row, first_col, last_col]`; each entry is a scalar or per-point list
-//   giving the derivative scale for that edge (`undef` leaves the edge unconstrained).
-//   `flat_edges=s` expands to `[s,s,s,s]`.  A positive value flares the surface
-//   outward from the edge; negative turns it inward.
-//   .
-//   End normals (one of `row_wrap`/`col_wrap` true, the other false) — `normal1=` and
-//   `normal2=`.  Apply when the specified boundary edge is degenerate (all points
-//   identical, e.g. a cone tip).  The surface is constrained to be normal to the given
-//   vector at that edge.  The vector magnitude controls how broadly the surface spreads.
-//   .
-//   Flat ends (one of `row_wrap`/`col_wrap` true, the other false) — `flat_end1=` and
-//   `flat_end2=`.  Apply when the specified boundary edge is coplanar and non-degenerate.
-//   Constrains the derivative to lie in the plane of the edge.  Positive points inward
-//   (smooth cap attachment); negative flares outward.  Scalar or per-point list.
-//   .
-//   **Advanced boundary derivatives** — `first_row_deriv=`, `last_row_deriv=`,
-//   `first_col_deriv=`, and `last_col_deriv=` enforce specific first partial derivatives
-//   along the four boundary edges.  Each accepts a single vector (applied to every
-//   point on the edge) or a list of vectors (one per point).  Vectors are scaled by
-//   total chord length, so a unit vector matches the parameterization speed.  These
-//   require `row_wrap=false` (for row derivs) or `col_wrap=false` (for col derivs).
-//   .
-//   Use with care: the solver enforces derivatives exactly at data points but the
-//   surface may wander between them.  When both u- and v-boundary derivatives are
-//   active, the cross-derivative is assumed zero at corners.
-//   .
-//   **Edges** — `row_edges=` and `col_edges=` insert edges or creases across the surface.
-//   Use `row_edges=` to specify the indices of rows that will be edges or creases,
-//   and `col_edges=` to specify the indices of columns that will be edges or creases. 
-//   For a non-wrapped direction, indices must be interior (not first or last).
-//   If you place edges close together, the effective degree of a narrow patch between
-//   edges may be reduced.  These patches are assembled into a single NURBS so this
-//   process is transparent to the user.  
-//   .
-//   **Extra control points** (`extra_pts=`, `smooth=`) — By default the solver uses
-//   exactly the number of control points needed to satisfy the constraints, which
-//   gives a unique solution that may be badly behaved.  Specifying `extra points=`
-//   and optionally `smooth=`, works the same way as in 
-//   for {{nurbs_interp()}}.  Both parameters can be scalars or 2-vectors to
-//   provide different values along the two directions.  
-//   .
-//   **Locating points in the spline** — In order to locate your original data
-//   points in the spline you need the `u` and `v` nurbs parameter values that you
-//   can pass to {{nurbs_patch_points()}}.  The last return value `uv` gives these:
-//   `uv[0][j]` is the u parameter for row `j` and `uv[1][k]` is the v parameter
-//   for column `k`, so the point `points[j][k]` lies at `(uv[0][j], uv[1][k])`
-//   in NURBS parameter space.
-//   .
-//   **Smoothness** — The smoothness of B-splines is determined by the
-//   degree.  If you request a degree p spline then it will be C^(p-1) at
-//   knot points and C^inf everywhere else.  If you request edges then
-//   these are points where the surface is not differentiable; edges may
-//   also divide the surface into smaller regions that lack sufficient points
-//   to support an interpolation of your requested degree: a degree p interpolation
-//   requires p+1 points.  In this case, the interpolation is performed at a lower
-//   degree and elevated, which means it will be less smooth at knots.
-// Arguments:
-//   points = Rectangular grid of 3D data points
-//   degree = scalar or 2-vector giving the degree of the B-spline in the two directions.
-//   splinesteps  = (module) Scalar or 2-vector giving the number of segments between each knot in the two directions.  Default: 16
-//   ---
-//   method    = Parameterization method: `"length"`, `"centripetal"`, `"dynamic"`, `"foley"`, or `"fang"`.  Default: `"centripetal"`
-//   row_wrap  = If true, smoothly connect the first row to the last row.  Default: false
-//   col_wrap  = If true, smoothly connect the first column to the last column.  Default: false
-//   extra_pts = Scalar or 2-vector giving the number of extra points in the two directions.  Default: `0`
-//   smooth    = Scalar or 2-vector giving the smoothness metric for extra points in the two directions: `1` (min polygon length), `2` (min bending), `3` (min bending energy).   Default: `3`
-//   flat_edges = 4-element list `[first_row, last_row, first_col, last_col]` of derivative scales at the four coplanar boundary edges.  Each entry is a scalar or per-point list; `undef` leaves that edge unconstrained.  Shorthand: `flat_edges=s` → `[s,s,s,s]`.  Requires `row_wrap=false, col_wrap=false`. 
-//   normal1   = Surface normal at the first degenerate boundary edge (mixed wrap surface only). 
-//   normal2   = Surface normal at the second degenerate boundary edge (mixed wrap surface only).
-//   flat_end1 = Inward derivative scale at the first coplanar non-degenerate boundary edge (mixed wrap surface).  Scalar or per-point list. 
-//   flat_end2 = Inward derivative scale at the second coplanar non-degenerate boundary edge (mixed wrap surface).  Scalar or per-point list.
-//   row_edges   = Row indices (or index) of rows that are treated as edges or creases.  
-//   col_edges   = Column indices (or index) of columns that are treated as edges or creases
-//   first_row_deriv = dS/du constraint along u=0 (first row).  Single vector or list of vectors (one per column).  Requires `row_wrap=false`.
-//   last_row_deriv  = dS/du constraint along u=1 (last row).  Single vector or list of vectors (one per column).  Requires `row_wrap=false`.
-//   first_col_deriv = dS/dv constraint along v=0 (first column).  Single vector or list of vectors (one per row).  Requires `col_wrap=false`.
-//   last_col_deriv  = dS/dv constraint along v=1 (last column).  Single vector or list of vectors (one per row).  Requires `col_wrap=false`.
-//   data_size    = (module) Radius of data-point markers; 0 suppresses markers.  Default: 0
-//   data_color   = (module) Color for data-point markers.  Default: `"red"`
-//   style        = (module) Triangulation style passed to `vnf_vertex_array()`.  Default: `"default"`
-//   reverse      = (module) If true, reverses face normals.  Default: false
-//   triangulate  = (module) If true, triangulates all quads.  Default: false
-//   caps         = (module) Cap both open boundary edges (mixed wrap only).  Default: false
-//   cap1         = (module) Cap the first open boundary edge.  
-//   cap2         = (module) Cap the second open boundary edge. 
-//   cp = (module) Centerpoint for determining intersection anchors or centering the shape.  Determines the base of the anchor vector.  Can be "centroid", "mean", "box" or a 3D point.  Default: "centroid"
-//   anchor = (module) Translate so anchor point is at origin (0,0,0).  See [anchor](attachments.scad#subsection-anchor).  Default: `"origin"`
-//   spin = (module) Rotate this many degrees around the Z axis after anchor.  See [spin](attachments.scad#subsection-spin).  Default: `0`
-//   orient = (module) Vector to rotate top toward, after spin. See [orient](attachments.scad#subsection-orient).  Default: `UP`
-//   atype = (module) Select "hull" or "intersect" anchor type.  Default: "hull"
-
-function nurbs_interp_surface(points, degree, method="centripetal",
-                              row_wrap=false, col_wrap=false,
-                              first_row_deriv=undef, last_row_deriv=undef,
-                              first_col_deriv=undef, last_col_deriv=undef,
-                              normal1=undef, normal2=undef,
-                              flat_end1=undef, flat_end2=undef,
-                              flat_edges=undef,
-                              row_edges=undef, col_edges=undef,
-                              extra_pts=0, smooth=3) =
-    // Preamble: extract shape/edge info needed for closed-direction dispatch.
-    let(
-        n_rows      = len(points),
-        n_cols      = len(points[0]),
-        ue_norm_pre = is_undef(row_edges) ? undef : force_list(row_edges),
-        ve_norm_pre = is_undef(col_edges) ? undef : force_list(col_edges),
-        has_ue_pre  = !is_undef(ue_norm_pre) && len(ue_norm_pre) > 0,
-        has_ve_pre  = !is_undef(ve_norm_pre) && len(ve_norm_pre) > 0
-    )
-    // col_edges on a closed v-direction: rotate columns so the first crease column
-    // becomes the v=0/v=1 boundary, append a copy at the end for the C0 seam,
-    // then recurse with col_wrap=false.  Remaining crease indices are shifted
-    // into the rotated coordinate system.
-    has_ve_pre && col_wrap ?
-        let(
-            ve_sorted  = sort(ve_norm_pre),
-            rot        = ve_sorted[0],
-            new_pts    = [for (row = points)
-                              concat([for (l = [rot:1:n_cols-1]) row[l]],
-                                     [for (l = [0:1:rot-1])      row[l]],
-                                     [row[rot]])],
-            adj_ve_raw = [for (i = [1:1:len(ve_sorted)-1])
-                              let(j = (ve_sorted[i] - rot + n_cols) % n_cols)
-                              if (j > 0) j],
-            adj_ve     = len(adj_ve_raw) == 0 ? undef : adj_ve_raw
-        )
-        let(inner = nurbs_interp_surface(new_pts, degree, method=method,
-                row_wrap=row_wrap, col_wrap=false,
-                first_row_deriv=first_row_deriv, last_row_deriv=last_row_deriv,
-                first_col_deriv=first_col_deriv, last_col_deriv=last_col_deriv,
-                normal1=normal1, normal2=normal2,
-                flat_end1=flat_end1, flat_end2=flat_end2, flat_edges=flat_edges,
-                row_edges=row_edges, col_edges=adj_ve,
-                extra_pts=extra_pts, smooth=smooth))
-        [inner[0], inner[1], inner[2], inner[3], inner[4], inner[5],
-         [inner[6][0],
-          list_rotate(select(inner[6][1], 0, n_cols-1), -rot)]]
-    // row_edges on a closed u-direction: rotate rows so the first crease row
-    // becomes the u=0/u=1 boundary, append a copy at the end, recurse clamped.
-    : has_ue_pre && row_wrap ?
-        let(
-            ue_sorted  = sort(ue_norm_pre),
-            rot        = ue_sorted[0],
-            new_pts    = concat([for (k = [rot:1:n_rows-1]) points[k]],
-                                [for (k = [0:1:rot-1])      points[k]],
-                                [points[rot]]),
-            adj_ue_raw = [for (i = [1:1:len(ue_sorted)-1])
-                              let(j = (ue_sorted[i] - rot + n_rows) % n_rows)
-                              if (j > 0) j],
-            adj_ue     = len(adj_ue_raw) == 0 ? undef : adj_ue_raw
-        )
-        let(inner = nurbs_interp_surface(new_pts, degree, method=method,
-                row_wrap=false, col_wrap=col_wrap,
-                first_row_deriv=first_row_deriv, last_row_deriv=last_row_deriv,
-                first_col_deriv=first_col_deriv, last_col_deriv=last_col_deriv,
-                normal1=normal1, normal2=normal2,
-                flat_end1=flat_end1, flat_end2=flat_end2, flat_edges=flat_edges,
-                row_edges=adj_ue, col_edges=col_edges,
-                extra_pts=extra_pts, smooth=smooth))
-        [inner[0], inner[1], inner[2], inner[3], inner[4], inner[5],
-         [list_rotate(select(inner[6][0], 0, n_rows-1), -rot),
-          inner[6][1]]]
-    // Normal path: both directions already clamped, or no conflicting edge constraints.
-    : let(
-        p_u    = is_list(degree) ? degree[0] : degree,
-        p_v    = is_list(degree) ? degree[1] : degree,
-        ep_u     = is_list(extra_pts) ? extra_pts[0] : extra_pts,
-        ep_v     = is_list(extra_pts) ? extra_pts[1] : extra_pts,
-        smooth_u = is_list(smooth) ? smooth[0] : smooth,
-        smooth_v = is_list(smooth) ? smooth[1] : smooth,
-        n_rows = len(points),
-        n_cols = len(points[0]),
-        dim    = len(points[0][0]),
-        // Scalar-vector promotion: if the caller passes a single vector instead of
-        // a list of vectors, repeat() it to the required length.  A single vector
-        // is detected as a list whose first element is a number, not a list.
-        first_row_deriv = is_undef(first_row_deriv) || is_list(first_row_deriv[0]) ? first_row_deriv
-                      : repeat(first_row_deriv, n_cols),
-        last_row_deriv = is_undef(last_row_deriv) || is_list(last_row_deriv[0]) ? last_row_deriv
-                      : repeat(last_row_deriv, n_cols),
-        first_col_deriv = is_undef(first_col_deriv) || is_list(first_col_deriv[0]) ? first_col_deriv
-                      : repeat(first_col_deriv, n_rows),
-        last_col_deriv = is_undef(last_col_deriv) || is_list(last_col_deriv[0]) ? last_col_deriv
-                      : repeat(last_col_deriv, n_rows),
-        // Treat an all-undef derivative list the same as undef.
-        has_sud = !is_undef(first_row_deriv) && num_defined(first_row_deriv) > 0,
-        has_eud = !is_undef(last_row_deriv) && num_defined(last_row_deriv) > 0,
-        has_svd = !is_undef(first_col_deriv) && num_defined(first_col_deriv) > 0,
-        has_evd = !is_undef(last_col_deriv) && num_defined(last_col_deriv) > 0,
-        has_sn  = !is_undef(normal1),
-        has_en  = !is_undef(normal2),
-        // normal1/normal2: apex edges only (all boundary points identical, e.g. cone tip).
-        // Auto-detect u=0/v=0 direction; u=0 (first row) takes priority.
-        start_u_apex = has_sn && max([for (pt = points[0])       norm(pt - points[0][0])]) < 1e-10,
-        start_v_apex = has_sn && max([for (k = [0:1:n_rows-1])   norm(points[k][0] - points[0][0])]) < 1e-10,
-        end_u_apex   = has_en && max([for (pt = points[n_rows-1]) norm(pt - points[n_rows-1][0])]) < 1e-10,
-        end_v_apex   = has_en && max([for (k = [0:1:n_rows-1])   norm(points[k][n_cols-1] - points[0][n_cols-1])]) < 1e-10,
-        has_sun = has_sn && start_u_apex,
-        has_eun = has_en && end_u_apex,
-        has_svn = has_sn && !start_u_apex && start_v_apex,
-        has_evn = has_en && !end_u_apex   && end_v_apex,
-        start_u_degen = start_u_apex,
-        start_v_degen = start_v_apex,
-        end_u_degen   = end_u_apex,
-        end_v_degen   = end_v_apex,
-        // flat_end1/flat_end2: coplanar non-collinear edges (points span a plane).
-        // Scalar or per-point list.  positive = closes inward, negative = flares outward.
-        // Direction is determined by the clamped direction of the surface:
-        //   row_wrap=false → flat_end applies to row boundaries (u-direction, first/last row).
-        //   col_wrap=false → flat_end applies to column boundaries (v-direction, first/last col).
-        // Exactly one direction must be clamped (enforced by assertion below).
-        has_fe1    = !is_undef(flat_end1),
-        has_fe2    = !is_undef(flat_end2),
-        has_fe1_u  = has_fe1 && !row_wrap,
-        has_fe1_v  = has_fe1 && !col_wrap,
-        has_fe2_u  = has_fe2 && !row_wrap,
-        has_fe2_v  = has_fe2 && !col_wrap,
-        // Boundary edges for coplanar validation.
-        fe1_edge   = has_fe1_u ? points[0]
-                   : has_fe1_v ? [for (k = [0:1:n_rows-1]) points[k][0]]
-                   : [],
-        fe2_edge   = has_fe2_u ? points[n_rows-1]
-                   : has_fe2_v ? [for (k = [0:1:n_rows-1]) points[k][n_cols-1]]
-                   : [],
-        fe1_ok     = !has_fe1 || (_is_coplanar_pts(fe1_edge) && !is_undef(_pts_plane_normal(fe1_edge))),
-        fe2_ok     = !has_fe2 || (_is_coplanar_pts(fe2_edge) && !is_undef(_pts_plane_normal(fe2_edge))),
-        // flat_edges= parsing: 4-element list [first_row, last_row, first_col, last_col].
-        // Scalar shorthand: flat_edges=s expands to [s, s, s, s].
-        fe_norm  = !is_undef(flat_edges) && !is_list(flat_edges)
-                 ? [flat_edges, flat_edges, flat_edges, flat_edges]
-                 : flat_edges,
-        has_fe   = !is_undef(fe_norm),
-        fe_su    = has_fe ? fe_norm[0] : undef,
-        fe_eu    = has_fe ? fe_norm[1] : undef,
-        fe_sv    = has_fe ? fe_norm[2] : undef,
-        fe_ev    = has_fe ? fe_norm[3] : undef,
-        has_fesu = has_fe && !is_undef(fe_su),
-        has_feeu = has_fe && !is_undef(fe_eu),
-        has_fesv = has_fe && !is_undef(fe_sv),
-        has_feev = has_fe && !is_undef(fe_ev),
-        // Edge (C0 discontinuity) support.  Singleton promotion: scalar → list.
-        ue_norm = is_undef(row_edges) ? undef : force_list(row_edges),
-        ve_norm = is_undef(col_edges) ? undef : force_list(col_edges),
-        has_ue = !is_undef(ue_norm) && len(ue_norm) > 0,
-        has_ve = !is_undef(ve_norm) && len(ve_norm) > 0
-    )
-    assert(is_list(points) && n_rows >= 2,
-           "nurbs_interp_surface: need at least 2 rows")
-    assert(n_cols >= 2,
-           "nurbs_interp_surface: need at least 2 columns")
-    assert(min([for (row = points) len(row)]) == max([for (row = points) len(row)]),
-           "nurbs_interp_surface: all rows must have the same number of columns")
-    assert(is_num(p_u) && p_u >= 1 && is_num(p_v) && p_v >= 1,
-           "nurbs_interp_surface: degree must be >= 1")
-    assert(method == "length" || method == "centripetal" || method == "dynamic"
-               || method == "foley" || method == "fang",
-           str("nurbs_interp_surface: method must be \"length\", \"centripetal\", \"dynamic\", \"foley\", or \"fang\", got \"", method, "\""))
-    assert(is_num(ep_u) && ep_u >= 0 && ep_u == floor(ep_u),
-           str("nurbs_interp_surface: extra_pts (u) must be a non-negative integer, got ", ep_u))
-    assert(is_num(ep_v) && ep_v >= 0 && ep_v == floor(ep_v),
-           str("nurbs_interp_surface: extra_pts (v) must be a non-negative integer, got ", ep_v))
-    assert(ep_u == 0 || p_u >= 2,
-           "nurbs_interp_surface: extra_pts in u-direction requires u-degree >= 2")
-    assert(ep_v == 0 || p_v >= 2,
-           "nurbs_interp_surface: extra_pts in v-direction requires v-degree >= 2")
-    assert(n_rows >= p_u + 1,
-           str("nurbs_interp_surface: need at least ", p_u+1,
-               " rows for u-degree ", p_u, ", got ", n_rows))
-    assert(n_cols >= p_v + 1,
-           str("nurbs_interp_surface: need at least ", p_v+1,
-               " columns for v-degree ", p_v, ", got ", n_cols))
-    assert(!(has_sud || has_eud || has_sun || has_eun || has_fesu || has_feeu || has_fe1_u || has_fe2_u) || !row_wrap,
-           "nurbs_interp_surface: u-direction derivative/normal/flat_end/flat_edges params require row_wrap=false")
-    assert(!(has_svd || has_evd || has_svn || has_evn || has_fesv || has_feev || has_fe1_v || has_fe2_v) || !col_wrap,
-           "nurbs_interp_surface: v-direction derivative/normal/flat_end/flat_edges params require col_wrap=false")
-    assert(!has_sud || len(first_row_deriv) == n_cols,
-           str("nurbs_interp_surface: first_row_deriv must have ", n_cols,
-               " entries (one per column), got ", is_undef(first_row_deriv) ? 0 : len(first_row_deriv)))
-    assert(!has_eud || len(last_row_deriv) == n_cols,
-           str("nurbs_interp_surface: last_row_deriv must have ", n_cols,
-               " entries (one per column), got ", is_undef(last_row_deriv) ? 0 : len(last_row_deriv)))
-    assert(!has_svd || len(first_col_deriv) == n_rows,
-           str("nurbs_interp_surface: first_col_deriv must have ", n_rows,
-               " entries (one per row), got ", is_undef(first_col_deriv) ? 0 : len(first_col_deriv)))
-    assert(!has_evd || len(last_col_deriv) == n_rows,
-           str("nurbs_interp_surface: last_col_deriv must have ", n_rows,
-               " entries (one per row), got ", is_undef(last_col_deriv) ? 0 : len(last_col_deriv)))
-    // normal1/normal2 assertions: apex edges only.
-    assert(!has_sn || (start_u_degen || start_v_degen),
-           "nurbs_interp_surface: normal1 requires a degenerate start edge (first row or first column must be all the same point)")
-    assert(!has_en || (end_u_degen || end_v_degen),
-           "nurbs_interp_surface: normal2 requires a degenerate end edge (last row or last column must be all the same point)")
-    assert(!has_sn || !(start_u_degen && start_v_degen),
-           "nurbs_interp_surface: normal1 is ambiguous — both u=0 and v=0 edges are degenerate; use first_row_deriv or first_col_deriv explicitly")
-    assert(!has_en || !(end_u_degen && end_v_degen),
-           "nurbs_interp_surface: normal2 is ambiguous — both u=1 and v=1 edges are degenerate; use last_row_deriv or last_col_deriv explicitly")
-    assert(!(has_sun && has_sud),
-           "nurbs_interp_surface: normal1 resolves to u-direction but first_row_deriv was also given")
-    assert(!(has_eun && has_eud),
-           "nurbs_interp_surface: normal2 resolves to u-direction but last_row_deriv was also given")
-    assert(!(has_svn && has_svd),
-           "nurbs_interp_surface: normal1 resolves to v-direction but first_col_deriv was also given")
-    assert(!(has_evn && has_evd),
-           "nurbs_interp_surface: normal2 resolves to v-direction but last_col_deriv was also given")
-    // flat_end1/flat_end2 assertions.
-    // Direction is determined by the clamped type; surface must be mixed clamped/closed.
-    assert(!has_fe1 || (row_wrap != col_wrap),
-           "nurbs_interp_surface: flat_end1 requires the surface to be clamped in one direction and closed in the other")
-    assert(!has_fe2 || (row_wrap != col_wrap),
-           "nurbs_interp_surface: flat_end2 requires the surface to be clamped in one direction and closed in the other")
-    assert(fe1_ok,
-           has_fe1_u
-           ? "nurbs_interp_surface: flat_end1 requires the first row (u=0 boundary) to be coplanar and non-collinear"
-           : "nurbs_interp_surface: flat_end1 requires the first column (v=0 boundary) to be coplanar and non-collinear. If your first row is coplanar, try row_wrap=true, col_wrap=false.")
-    assert(fe2_ok,
-           has_fe2_u
-           ? "nurbs_interp_surface: flat_end2 requires the last row (u=1 boundary) to be coplanar and non-collinear"
-           : "nurbs_interp_surface: flat_end2 requires the last column (v=1 boundary) to be coplanar and non-collinear. If your last row is coplanar, try row_wrap=true, col_wrap=false.")
-    assert(!(has_fe1_u && has_sud),
-           "nurbs_interp_surface: flat_end1 conflicts with first_row_deriv")
-    assert(!(has_fe2_u && has_eud),
-           "nurbs_interp_surface: flat_end2 conflicts with last_row_deriv")
-    assert(!(has_fe1_v && has_svd),
-           "nurbs_interp_surface: flat_end1 conflicts with first_col_deriv")
-    assert(!(has_fe2_v && has_evd),
-           "nurbs_interp_surface: flat_end2 conflicts with last_col_deriv")
-    assert(!(has_fe1_u && has_fesu),
-           "nurbs_interp_surface: flat_end1 conflicts with flat_edges[0] on same edge")
-    assert(!(has_fe2_u && has_feeu),
-           "nurbs_interp_surface: flat_end2 conflicts with flat_edges[1] on same edge")
-    assert(!(has_fe1_v && has_fesv),
-           "nurbs_interp_surface: flat_end1 conflicts with flat_edges[2] on same edge")
-    assert(!(has_fe2_v && has_feev),
-           "nurbs_interp_surface: flat_end2 conflicts with flat_edges[3] on same edge")
-    assert(!has_fe1 || is_num(flat_end1) || len(flat_end1) == (has_fe1_u ? n_cols : n_rows),
-           str("nurbs_interp_surface: flat_end1 list must have ", has_fe1_u ? n_cols : n_rows, " entries"))
-    assert(!has_fe2 || is_num(flat_end2) || len(flat_end2) == (has_fe2_u ? n_cols : n_rows),
-           str("nurbs_interp_surface: flat_end2 list must have ", has_fe2_u ? n_cols : n_rows, " entries"))
-    // flat_edges assertions.
-    assert(!has_fe || (is_list(fe_norm) && len(fe_norm) == 4),
-           "nurbs_interp_surface: flat_edges must be a scalar or 4-element list [first_row, last_row, first_col, last_col]")
-    assert(!(has_fesu && has_sud),
-           "nurbs_interp_surface: flat_edges[0] (first_row) conflicts with first_row_deriv")
-    assert(!(has_feeu && has_eud),
-           "nurbs_interp_surface: flat_edges[1] (last_row) conflicts with last_row_deriv")
-    assert(!(has_fesv && has_svd),
-           "nurbs_interp_surface: flat_edges[2] (first_col) conflicts with first_col_deriv")
-    assert(!(has_feev && has_evd),
-           "nurbs_interp_surface: flat_edges[3] (last_col) conflicts with last_col_deriv")
-    assert(!(has_fesu && has_sun),
-           "nurbs_interp_surface: flat_edges[0] (first_row) conflicts with normal1 on same edge")
-    assert(!(has_feeu && has_eun),
-           "nurbs_interp_surface: flat_edges[1] (last_row) conflicts with normal2 on same edge")
-    assert(!(has_fesv && has_svn),
-           "nurbs_interp_surface: flat_edges[2] (first_col) conflicts with normal1 on same edge")
-    assert(!(has_feev && has_evn),
-           "nurbs_interp_surface: flat_edges[3] (last_col) conflicts with normal2 on same edge")
-    assert(!has_fesu || !is_list(fe_su) || len(fe_su) == n_cols,
-           str("nurbs_interp_surface: flat_edges[0] scale list must have ", n_cols, " entries (one per column)"))
-    assert(!has_feeu || !is_list(fe_eu) || len(fe_eu) == n_cols,
-           str("nurbs_interp_surface: flat_edges[1] scale list must have ", n_cols, " entries (one per column)"))
-    assert(!has_fesv || !is_list(fe_sv) || len(fe_sv) == n_rows,
-           str("nurbs_interp_surface: flat_edges[2] scale list must have ", n_rows, " entries (one per row)"))
-    assert(!has_feev || !is_list(fe_ev) || len(fe_ev) == n_rows,
-           str("nurbs_interp_surface: flat_edges[3] scale list must have ", n_rows, " entries (one per row)"))
-    // Edge (C0) validation.
-    assert(!has_ue || !row_wrap,
-           "nurbs_interp_surface: row_edges requires row_wrap=false")
-    assert(!has_ve || !col_wrap,
-           "nurbs_interp_surface: col_edges requires col_wrap=false")
-    assert(!has_ue || (min(ue_norm) >= 1 && max(ue_norm) <= n_rows-2),
-           str("nurbs_interp_surface: row_edges indices must be interior (1..", n_rows-2, ")"))
-    assert(!has_ve || (min(ve_norm) >= 1 && max(ve_norm) <= n_cols-2),
-           str("nurbs_interp_surface: col_edges indices must be interior (1..", n_cols-2, ")"))
-    // row_edges / col_edges are compatible with same-direction boundary derivatives,
-    // normals, and flat_edges: the first/last segment of the edge-aware system
-    // carries the boundary derivative constraint.
-    let(
-        // Boundary plane for flat_edges=: cross product of two perimeter vectors.
-        // Guarded so degenerate geometry can't produce NaN when flat_edges is unused.
-        fe_e1    = has_fe ? (points[0][n_cols-1] - points[0][0])    : [1,0,0],
-        fe_e2    = has_fe ? (points[n_rows-1][0] - points[0][0])    : [0,1,0],
-        fe_N_raw = has_fe ? cross(fe_e1, fe_e2)                     : [0,0,1],
-        fe_N_hat = fe_N_raw / max(norm(fe_N_raw), 1e-15),
-        // Per-edge flat-outward derivative lists; undef when edge not active.
-        // Direction at each point: from adjacent interior point toward edge,
-        // projected into the boundary plane, then normalized and scaled.
-        flat_su_der = !has_fesu ? undef :
-            [for (j = [0:1:n_cols-1])
-                let(
-                    d      = points[1][j]       - points[0][j],
-                    d_flat = d - (d * fe_N_hat) * fe_N_hat,
-                    d_hat  = d_flat / max(norm(d_flat), 1e-15),
-                    s      = is_list(fe_su) ? fe_su[j] : fe_su
-                ) d_hat * s],
-        flat_eu_der = !has_feeu ? undef :
-            [for (j = [0:1:n_cols-1])
-                let(
-                    d      = points[n_rows-1][j] - points[n_rows-2][j],
-                    d_flat = d - (d * fe_N_hat) * fe_N_hat,
-                    d_hat  = d_flat / max(norm(d_flat), 1e-15),
-                    s      = is_list(fe_eu) ? fe_eu[j] : fe_eu
-                ) d_hat * s],
-        flat_sv_der = !has_fesv ? undef :
-            [for (k = [0:1:n_rows-1])
-                let(
-                    d      = points[k][1]       - points[k][0],
-                    d_flat = d - (d * fe_N_hat) * fe_N_hat,
-                    d_hat  = d_flat / max(norm(d_flat), 1e-15),
-                    s      = is_list(fe_sv) ? fe_sv[k] : fe_sv
-                ) d_hat * s],
-        flat_ev_der = !has_feev ? undef :
-            [for (k = [0:1:n_rows-1])
-                let(
-                    d      = points[k][n_cols-1] - points[k][n_cols-2],
-                    d_flat = d - (d * fe_N_hat) * fe_N_hat,
-                    d_hat  = d_flat / max(norm(d_flat), 1e-15),
-                    s      = is_list(fe_ev) ? fe_ev[k] : fe_ev
-                ) d_hat * s]
-    )
-    assert(!has_fesu || min([for (j = [0:1:n_cols-1]) let(d = points[1][j] - points[0][j], d_flat = d - (d * fe_N_hat) * fe_N_hat) norm(d_flat)]) > 1e-10,
-           "nurbs_interp_surface: flat_edges[0] (first_row) direction is perpendicular to the boundary plane at one or more points")
-    assert(!has_feeu || min([for (j = [0:1:n_cols-1]) let(d = points[n_rows-1][j] - points[n_rows-2][j], d_flat = d - (d * fe_N_hat) * fe_N_hat) norm(d_flat)]) > 1e-10,
-           "nurbs_interp_surface: flat_edges[1] (last_row) direction is perpendicular to the boundary plane at one or more points")
-    assert(!has_fesv || min([for (k = [0:1:n_rows-1]) let(d = points[k][1] - points[k][0], d_flat = d - (d * fe_N_hat) * fe_N_hat) norm(d_flat)]) > 1e-10,
-           "nurbs_interp_surface: flat_edges[2] (first_col) direction is perpendicular to the boundary plane at one or more points")
-    assert(!has_feev || min([for (k = [0:1:n_rows-1]) let(d = points[k][n_cols-1] - points[k][n_cols-2], d_flat = d - (d * fe_N_hat) * fe_N_hat) norm(d_flat)]) > 1e-10,
-           "nurbs_interp_surface: flat_edges[3] (last_col) direction is perpendicular to the boundary plane at one or more points")
-    assert(!has_fe || is_coplanar(concat(
-        points[0], points[n_rows-1],
-        [for (k = [1:1:n_rows-2]) points[k][0]],
-        [for (k = [1:1:n_rows-2]) points[k][n_cols-1]]), eps=1e-6),
-        "nurbs_interp_surface: flat_edges= requires all four boundary edges to be coplanar")
-    let(
-        // Compute effective derivative lists.
-        // Priority: normal1/normal2 (apex) > flat_end1/flat_end2 (coplanar) > flat_edges > explicit *_der=.
-        // Apex (all boundary points identical): fan outward from apex, user axis vector N.
-        //   End-edge apex tangents are negated because _apex_tangents() returns outward
-        //   (apex→ring) vectors; negating gives inward (ring→apex), making the surface
-        //   converge to the apex tip at the correct parametric direction.
-        // Coplanar (flat_end): _coplanar_inward_tangents() returns in-plane vectors
-        //   oriented toward the polygon interior using the polygon winding order.
-        //   Positive scale closes inward, negative flares outward.
-        //   flat_end1 result is negated: _coplanar_inward_tangents returns outward
-        //   for the start boundary; negating gives the correct inward direction.
-        //   flat_end2 uses the same function without negation (end boundary sign matches).
-        //   Periodic tangent differences used when the cross-direction is "closed".
-        first_row_deriv_eff = has_sun
-            ? _apex_tangents(normal1, points[0][0], points[1])
-            : has_fe1_u
-            ? [for (v = _coplanar_inward_tangents(flat_end1, points[0], points[1],
-                                        periodic=col_wrap)) -v]
-            : has_fesu ? flat_su_der
-            : first_row_deriv,
-        last_row_deriv_eff = has_eun
-            ? [for (v = _apex_tangents(normal2, points[n_rows-1][0], points[n_rows-2])) -v]
-            : has_fe2_u
-            ? _coplanar_inward_tangents(flat_end2, points[n_rows-1], points[n_rows-2],
-                                        periodic=col_wrap)
-            : has_feeu ? flat_eu_der
-            : last_row_deriv,
-        first_col_deriv_eff = has_svn
-            ? _apex_tangents(normal1, points[0][0],
-                             [for (k = [0:1:n_rows-1]) points[k][1]])
-            : has_fe1_v
-            ? [for (v = _coplanar_inward_tangents(flat_end1,
-                                        [for (k = [0:1:n_rows-1]) points[k][0]],
-                                        [for (k = [0:1:n_rows-1]) points[k][1]],
-                                        periodic=row_wrap)) -v]
-            : has_fesv ? flat_sv_der
-            : first_col_deriv,
-        last_col_deriv_eff = has_evn
-            ? [for (v = _apex_tangents(normal2, points[0][n_cols-1],
-                                       [for (k = [0:1:n_rows-1]) points[k][n_cols-2]])) -v]
-            : has_fe2_v
-            ? _coplanar_inward_tangents(flat_end2,
-                                        [for (k = [0:1:n_rows-1]) points[k][n_cols-1]],
-                                        [for (k = [0:1:n_rows-1]) points[k][n_cols-2]],
-                                        periodic=row_wrap)
-            : has_feev ? flat_ev_der
-            : last_col_deriv,
-        has_sud_eff = has_sud || has_sun || has_fesu || has_fe1_u,
-        has_eud_eff = has_eud || has_eun || has_feeu || has_fe2_u,
-        has_svd_eff = has_svd || has_svn || has_fesv || has_fe1_v,
-        has_evd_eff = has_evd || has_evn || has_feev || has_fe2_v
-    )
-    // row_edges / col_edges boundary-derivative segment-size checks.
-    // A derivative-carrying edge segment needs at least 3 rows/columns;
-    // with only 2 the degree-reduced knot vector becomes degenerate.
-    assert(!(has_ue && has_sud_eff && ue_norm[0] + 1 < 3),
-           !has_ue ? "" :
-           str("nurbs_interp_surface: row_edges=", ue_norm,
-               " creates a ", ue_norm[0]+1, "-row first segment (rows 0-",
-               ue_norm[0], ") which is too short to carry the start-u derivative constraint. ",
-               "Move the first row_edges index to at least 2"))
-    assert(!(has_ue && has_eud_eff && n_rows - last(ue_norm) < 3),
-           !has_ue ? "" :
-           str("nurbs_interp_surface: row_edges=", ue_norm,
-               " creates a ", n_rows - last(ue_norm), "-row last segment (rows ",
-               last(ue_norm), "-", n_rows-1, ") which is too short to carry the end-u derivative constraint. ",
-               "Move the last row_edges index to at most ", n_rows - 3))
-    assert(!(has_ve && has_svd_eff && ve_norm[0] + 1 < 3),
-           !has_ve ? "" :
-           str("nurbs_interp_surface: col_edges=", ve_norm,
-               " creates a ", ve_norm[0]+1, "-column first segment (columns 0-",
-               ve_norm[0], ") which is too short to carry the start-v derivative constraint. ",
-               "Move the first col_edges index to at least 2"))
-    assert(!(has_ve && has_evd_eff && n_cols - last(ve_norm) < 3),
-           !has_ve ? "" :
-           str("nurbs_interp_surface: col_edges=", ve_norm,
-               " creates a ", n_cols - last(ve_norm), "-column last segment (columns ",
-               last(ve_norm), "-", n_cols-1, ") which is too short to carry the end-v derivative constraint. ",
-               "Move the last col_edges index to at most ", n_cols - 3))
-    let(
-        // Averaged parameterization in each direction
-        u_params = _surface_params_u(points, method, row_wrap),
-        v_params = _surface_params_v(points, method, col_wrap),
-
-        // Per-row v-direction path lengths for scaling v-boundary tangents.
-        // Follows the curve convention: user passes normalized vectors; code
-        // scales by total chord length so a unit vector gives natural speed.
-        v_path_lens = [for (k = [0:1:n_rows-1]) path_length(points[k])],
-
-        // Per-column u-direction path lengths for scaling u-boundary tangents.
-        u_path_lens = [for (l = [0:1:n_cols-1])
-                           path_length([for (k = [0:1:n_rows-1]) points[k][l]])],
-
-        // ----- Build v-direction system -----
-        // When col_edges is active, precompute per-segment collocation systems.
-        // Otherwise use the standard (or derivative-extended) system.
-        v_edge_sys = has_ve
-                   ? _build_edge_systems(v_params, p_v, ve_norm,
-                                          has_sd=has_svd_eff,
-                                          has_ed=has_evd_eff,
-                                          extra_pts=ep_v, label="v") : undef,
-        v_sys   = has_ve ? undef
-                : (has_svd_eff || has_evd_eff)
-                ? _build_clamped_system_with_derivs(v_params, p_v, has_svd_eff, has_evd_eff, ep_v)
-                : _build_interp_system(v_params, p_v, col_wrap ? "closed" : "clamped", ep_v),
-        N_v     = has_ve ? undef : v_sys[0],
-        // When underdetermined (extra_pts), build regularization matrix for v.
-        M_v      = has_ve ? undef : len(N_v[0]),
-        N_rows_v = has_ve ? undef : len(N_v),
-        ns_v     = !has_ve && M_v > N_rows_v,
-        R_reg_v  = !ns_v ? undef
-                 : let(vk = v_sys[1],
-                       vint = !col_wrap
-                            ? [for (i = [1:1:len(vk)-2]) vk[i]]
-                            : undef,
-                       vU = !col_wrap
-                          ? _full_clamped_knots(vint, p_v)
-                          : _full_closed_knots(vk, M_v, p_v))
-                   _regularization_matrix(M_v, smooth_v, p_v, vU, periodic=col_wrap),
-
-        // ----- Pass 1: Interpolate rows in v-direction -----
-        // With col_edges: solve each row via edge-aware segmented system.
-        // Without: same A_v matrix for every row; only the RHS changes per row.
-        R_raw = has_ve
-            ? [for (k = [0:1:n_rows-1])
-                _solve_with_edges(v_edge_sys, points[k],
-                                  v_params, ve_norm, p_v,
-                    start_deriv = has_svd_eff
-                        ? _force_deriv_dim(first_col_deriv_eff[k], dim) * v_path_lens[k]
-                        : undef,
-                    end_deriv = has_evd_eff
-                        ? _force_deriv_dim(last_col_deriv_eff[k], dim) * v_path_lens[k]
-                        : undef,
-                    smooth = smooth_v)]
-            : undef,
-        R = has_ve
-            ? [for (r = R_raw) r[0]]
-            : [for (k = [0:1:n_rows-1])
-                let(rhs = concat(
-                        points[k],
-                        has_svd_eff
-                            ? [_force_deriv_dim(first_col_deriv_eff[k], dim) * v_path_lens[k]]
-                            : [],
-                        has_evd_eff
-                            ? [_force_deriv_dim(last_col_deriv_eff[k], dim) * v_path_lens[k]]
-                            : []))
-                ns_v ? _nullspace_solve(R_reg_v, N_v, rhs)
-                     : linear_solve(N_v, rhs)
-            ],
-
-        v_knots  = has_ve ? R_raw[0][1] : v_sys[1],
-        n_v_ctrl = len(R[0]),
-
-        // ----- Pass 1.5: Project u-boundary tangents into v-control space -----
-        // ∂S/∂u along u=0 or u=1 is given at the n_cols data v-positions.
-        // To use them as derivative RHS in the u-direction column solves, we
-        // must express them in the v B-spline control basis — done by solving
-        // the same v-system.  When col_edges is active, project through the
-        // edge-aware segmented system instead.
-        zero_v = repeat(0, dim),
-        _su_der_data = has_sud_eff
-            ? [for (l = [0:1:n_cols-1])
-                _force_deriv_dim(first_row_deriv_eff[l], dim) * u_path_lens[l]]
-            : undef,
-        _eu_der_data = has_eud_eff
-            ? [for (l = [0:1:n_cols-1])
-                _force_deriv_dim(last_row_deriv_eff[l], dim) * u_path_lens[l]]
-            : undef,
-        T_u_start = has_sud_eff
-                  ? has_ve
-                    ? _solve_with_edges(v_edge_sys, _su_der_data,
-                                        v_params, ve_norm, p_v,
-                          start_deriv = has_svd_eff ? zero_v : undef,
-                          end_deriv   = has_evd_eff ? zero_v : undef,
-                          smooth      = smooth_v)[0]
-                    : let(_rhs = concat(_su_der_data,
-                              has_svd_eff ? [zero_v] : [],
-                              has_evd_eff ? [zero_v] : []))
-                      ns_v ? _nullspace_solve(R_reg_v, N_v, _rhs)
-                           : linear_solve(N_v, _rhs)
-                  : undef,
-        T_u_end   = has_eud_eff
-                  ? has_ve
-                    ? _solve_with_edges(v_edge_sys, _eu_der_data,
-                                        v_params, ve_norm, p_v,
-                          start_deriv = has_svd_eff ? zero_v : undef,
-                          end_deriv   = has_evd_eff ? zero_v : undef,
-                          smooth      = smooth_v)[0]
-                    : let(_rhs = concat(_eu_der_data,
-                              has_svd_eff ? [zero_v] : [],
-                              has_evd_eff ? [zero_v] : []))
-                      ns_v ? _nullspace_solve(R_reg_v, N_v, _rhs)
-                           : linear_solve(N_v, _rhs)
-                  : undef,
-
-        // ----- Build u-direction system -----
-        // When row_edges is active, precompute per-segment systems.
-        u_edge_sys = has_ue
-                   ? _build_edge_systems(u_params, p_u, ue_norm,
-                                          has_sd=has_sud_eff,
-                                          has_ed=has_eud_eff,
-                                          extra_pts=ep_u, label="u") : undef,
-        u_sys   = has_ue ? undef
-                : (has_sud_eff || has_eud_eff)
-                ? _build_clamped_system_with_derivs(u_params, p_u, has_sud_eff, has_eud_eff, ep_u)
-                : _build_interp_system(u_params, p_u, row_wrap ? "closed" : "clamped", ep_u),
-        N_u     = has_ue ? undef : u_sys[0],
-        // When underdetermined (extra_pts), build regularization matrix for u.
-        M_u      = has_ue ? undef : len(N_u[0]),
-        N_rows_u = has_ue ? undef : len(N_u),
-        ns_u     = !has_ue && M_u > N_rows_u,
-        R_reg_u  = !ns_u ? undef
-                 : let(uk = u_sys[1],
-                       uint = !row_wrap
-                            ? [for (i = [1:1:len(uk)-2]) uk[i]]
-                            : undef,
-                       uU = !row_wrap
-                          ? _full_clamped_knots(uint, p_u)
-                          : _full_closed_knots(uk, M_u, p_u))
-                   _regularization_matrix(M_u, smooth_u, p_u, uU, periodic=row_wrap),
-
-        // ----- Pass 2: Interpolate columns in u-direction -----
-        // Transpose R so each entry is a column of intermediate points.
-        R_T  = [for (j = [0:1:n_v_ctrl-1])
-                    [for (k = [0:1:n_rows-1]) R[k][j]]],
-
-        // With row_edges: solve each column via edge-aware segmented system.
-        // Without: add u-tangent constraint rows to the RHS for each column j.
-        P_T_raw = has_ue
-            ? [for (j = [0:1:n_v_ctrl-1])
-                _solve_with_edges(u_edge_sys, R_T[j],
-                                  u_params, ue_norm, p_u,
-                    start_deriv = has_sud_eff ? T_u_start[j] : undef,
-                    end_deriv   = has_eud_eff ? T_u_end[j]   : undef,
-                    smooth      = smooth_u)]
-            : undef,
-        P_T  = has_ue
-            ? [for (r = P_T_raw) r[0]]
-            : [for (j = [0:1:n_v_ctrl-1])
-                let(rhs = concat(
-                        R_T[j],
-                        has_sud_eff ? [T_u_start[j]] : [],
-                        has_eud_eff ? [T_u_end[j]]   : []))
-                ns_u ? _nullspace_solve(R_reg_u, N_u, rhs)
-                     : linear_solve(N_u, rhs)
-            ],
-
-        u_knots  = has_ue ? P_T_raw[0][1] : u_sys[1],
-
-        // Transpose back to get the final control point grid.
-        n_u_ctrl = len(P_T[0]),
-        P        = [for (i = [0:1:n_u_ctrl-1])
-                        [for (j = [0:1:n_v_ctrl-1]) P_T[j][i]]]
-    )
-    [[row_wrap ? "closed" : "clamped", col_wrap ? "closed" : "clamped"],
-     [p_u, p_v], P, [u_knots, v_knots], undef, undef,
-     [u_params, v_params]];
-
-
-module nurbs_interp_surface(points, degree, splinesteps=16,
-                            method="centripetal",
-                            row_wrap=false, col_wrap=false,
-                            style="default", reverse=false, triangulate=false,
-                            caps=undef, cap1=undef, cap2=undef,
-                            first_row_deriv=undef, last_row_deriv=undef,
-                            first_col_deriv=undef, last_col_deriv=undef,
-                            normal1=undef, normal2=undef,
-                            flat_end1=undef, flat_end2=undef,
-                            flat_edges=undef,
-                            row_edges=undef, col_edges=undef,
-                            extra_pts=0, smooth=3,
-                            data_color="red", data_size=0,
-                            atype="hull", convexity=10, cp="centroid", anchor="origin", spin=0, orient=UP
-)
-   {
-    result = nurbs_interp_surface(points, degree,
-                 method=method, row_wrap=row_wrap, col_wrap=col_wrap,
-                 first_row_deriv=first_row_deriv, last_row_deriv=last_row_deriv,
-                 first_col_deriv=first_col_deriv, last_col_deriv=last_col_deriv,
-                 normal1=normal1, normal2=normal2,
-                 flat_end1=flat_end1, flat_end2=flat_end2,
-                 flat_edges=flat_edges,
-                 row_edges=row_edges, col_edges=col_edges,
-                 extra_pts=extra_pts, smooth=smooth);
-    nurbs_vnf(result, splinesteps=splinesteps, style=style,
-                             reverse=reverse, triangulate=triangulate,
-                             caps=caps, cap1=cap1, cap2=cap2, convexity=convexity, atype=atype, anchor=anchor, spin=spin, orient=orient) children();
-    if (data_size > 0)
-        color(data_color)
-            for (row = points)
-                for (pt = row)
-                    translate(pt) sphere(r=data_size, $fn=16);
-}
 
 
 // ---------- CLAMPED interpolation ----------
@@ -4089,7 +4216,7 @@ function _surface_params_v(points, method, periodic) =
 
 
 
-// Section: Usage Examples
+
 //
 // Example(2D): Clamped curve (default)
 //   data = [[0,0], [10,30], [25,15], [40,35], [60,10], [80,25]];
@@ -4100,131 +4227,3 @@ function _surface_params_v(points, method, periodic) =
 //   data = [[0,0], [30,50], [60,40], [80,10], [50,-20], [20,-10]];
 //   debug_nurbs_interp(data, 3, closed=true);
 //
-// Example(2D): Closed polygon
-//   // All data points lie exactly on the polygon boundary.
-//   data = [[0,0], [30,50], [60,40], [80,10], [50,-20], [20,-10]];
-//   path = nurbs_interp_curve(data, 3, splinesteps=16, closed=true);
-//   polygon(path);
-//   color("red") move_copies(data) circle(r=0.25, $fn=16);
-//
-// Example(2D): Get just the path
-//   data = [[0,0], [10,30], [25,15], [40,35], [60,10], [80,25]];
-//   path = nurbs_interp_curve(data, 3, splinesteps=32);
-//   stroke(path, width=0.5);
-//   color("red") move_copies(data) circle(r=0.25, $fn=16);
-//
-// Example(2D): Low-level NURBS parameter list
-//   // nurbs_interp() returns a BOSL2 NURBS parameter list compatible
-//   // with nurbs_curve(), debug_nurbs(), etc.
-//   data = [[0,0], [10,30], [25,15], [40,35], [60,10], [80,25]];
-//   result = nurbs_interp(data, 3);
-//   curve = nurbs_curve(result, splinesteps=24);
-//   stroke(curve, width=0.5);
-//
-// Example(3D): 3D closed curve
-//   data3d = [[20,0,0],[0,20,10],[-20,0,20],[0,-20,10]];
-//   path = nurbs_interp_curve(data3d, 3, splinesteps=32, closed=true);
-//   stroke(path, width=1, closed=true);
-//   color("red") move_copies(data3d) sphere(r=0.25, $fn=16);
-//
-// Example(2D): Parameterization methods for sharp turns
-//   // "length" (blue), "centripetal" (red), "dynamic" (orange) compared.
-//   // For data with sudden direction changes or uneven chord spacing,
-//   // "centripetal" and "dynamic" reduce unwanted oscillations.
-//   sharp = [[0,0], [5,40],[6,40], [10,0], [50,0], [55,40],[56,42], [60,0]];
-//   color("blue")   stroke(nurbs_interp_curve(sharp, 3), width=0.1);
-//   color("red")    stroke(nurbs_interp_curve(sharp, 3, method="centripetal"), width=0.1);
-//   color("orange") stroke(nurbs_interp_curve(sharp, 3, method="dynamic"), width=0.1);
-//   color("green") move_copies(sharp) circle(r=.1, $fn=16);
-//
-// Example(2D): Endpoint tangent control
-//   // Specify start and/or end tangent vectors.  Each vector is automatically
-//   // scaled by the total chord length; a unit vector produces natural
-//   // arc-length speed.  Magnitude > 1 increases pull, < 1 weakens it.
-//   data = [[0,0], [20,30], [50,25], [80,0]];
-//   // No tangent control (natural):
-//   color("gray") stroke(nurbs_interp_curve(data, 3), width=0.3);
-//   // Start going straight up, end going straight down:
-//   color("blue") stroke(
-//       nurbs_interp_curve(data, 3, start_deriv=[0,1], end_deriv=[0,-1]),
-//       width=0.3);
-//   // Start going right, end going right:
-//   color("red") stroke(
-//       nurbs_interp_curve(data, 3, start_deriv=[1,0], end_deriv=[1,0]),
-//       width=0.3);
-//   color("black") move_copies(data) circle(r=0.25, $fn=16);
-//
-// Example(2D): Start tangent only
-//   data = [[0,0], [20,30], [50,25], [80,0]];
-//   color("gray") stroke(nurbs_interp_curve(data, 3), width=0.3);
-//   color("blue") stroke(
-//       nurbs_interp_curve(data, 3, start_deriv=[0,1]),
-//       width=0.3);
-//   color("black") move_copies(data) circle(r=0.25, $fn=16);
-//
-//
-// Section: Surface Interpolation Examples
-//
-// Example(3D): Basic surface interpolation
-//   // A 4x5 grid of 3D data points produces a smooth interpolating surface.
-//   data = [
-//       [[-50, 50,  0], [-16, 50,  20], [ 16, 50,  10], [50, 50,  0], [80, 50,  5]],
-//       [[-50, 16, 20], [-16, 16,  40], [ 16, 16,  30], [50, 16, 20], [80, 16, 10]],
-//       [[-50,-16, 20], [-16,-16,  35], [ 16,-16,  40], [50,-16, 15], [80,-16, 25]],
-//       [[-50,-50,  0], [-16,-50,  10], [ 16,-50,  20], [50,-50,  0], [80,-50,  5]],
-//   ];
-//   nurbs_interp_surface(data, 3, splinesteps=8);
-//
-// Example(3D): Different degrees per direction
-//   // Quadratic in u (rows), cubic in v (columns).
-//   data = [
-//       for (u = [-40:20:40])
-//           [for (v = [-40:20:40])
-//               [v, u, 15*sin(u*3)*cos(v*3)]]
-//   ];
-//   nurbs_interp_surface(data, [2,3], splinesteps=8);
-//
-// Example(3D): Tube (surface closed in one direction)
-//   // Closed around the column direction (the rings), clamped along rows
-//   // (the axis).  Uses 5 rings: a cubic closed direction needs at least
-//   // p+2 = 5 data points to have interior knot freedom.
-//   r = 20;
-//   data = [for (u = [0:15:60])
-//       [for (i = [0:1:5])
-//           let(a = i * 360/6)
-//           [r*cos(a), r*sin(a), u]]
-//   ];
-//   nurbs_interp_surface(data, 3, splinesteps=8, col_wrap=true);
-//
-// Example(3D): Torus (surface closed in both directions)
-//   // Both directions sample a full 360 circle with even angular spacing,
-//   // so the closing segment equals the inter-point spacing and
-//   // parameterization is uniform.  Each direction uses N=6 > p+1=4
-//   // points to ensure interior knot freedom.
-//   R = 30; r = 10;
-//   N = 6;
-//   data = [for (i = [0:1:N-1])
-//       let(phi = i * 360/N)
-//       [for (j = [0:1:N-1])
-//           let(theta = j * 360/N)
-//           [(R + r*cos(theta))*cos(phi),
-//            (R + r*cos(theta))*sin(phi),
-//            r*sin(theta)]]
-//   ];
-//   nurbs_interp_surface(data, 3, splinesteps=12,
-//       row_wrap=true, col_wrap=true);
-//
-// Example(3D): Low-level surface access
-//   // nurbs_interp_surface() returns a BOSL2 NURBS parameter list
-//   // compatible with nurbs_vnf(), debug_nurbs(), etc.
-//   data = [
-//       [[-30,30,0], [0,30,20], [30,30,0]],
-//       [[-30, 0,10],[0, 0,30], [30, 0,10]],
-//       [[-30,-30,0],[0,-30,15],[30,-30,0]],
-//   ];
-//   result = nurbs_interp_surface(data, 2);
-//   vnf = nurbs_vnf(result, splinesteps=12);
-//   vnf_polyhedron(vnf);
-//   color("red")
-//       for (row = data) for (pt = row)
-//           translate(pt) sphere(r=1, $fn=16);
