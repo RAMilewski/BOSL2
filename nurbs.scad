@@ -622,7 +622,7 @@ function is_nurbs_patch(x) =
 
 
 // Function: nurbs_patch_points()
-// Synopsis: Computes specifies point(s) on a NURBS surface patch
+// Synopsis: Computes specified point(s) on a NURBS surface patch
 // Topics: NURBS Patches
 // See Also: nurbs_vnf(), nurbs_curve()
 // Usage:
@@ -1894,7 +1894,7 @@ function _elevate_once(ctrl, p, U) =
 //   where `u[k]` is the NURBS parameter at which the curve passes through
 //   `points[k]`.
 //   .
-//  **Smoothness** &mdash; The smoothness of B-splines is determined by the
+//   **Smoothness** &mdash; The smoothness of B-splines is determined by the
 //   degree.  If you request a degree $p$ spline then it will be $C^{p-1}$ at
 //   knot points and $C^\infty$ everywhere else.  If you request corners then 
 //   these are points where the curve is not differentiable; corners may
@@ -1918,6 +1918,19 @@ function _elevate_once(ctrl, p, U) =
 //   corners   = List of interior point indices where corners are permitted.  Equivalent to setting entries of `deriv` to NAN.
 //   extra_pts = Number of extra control points to add to provide additional freedom to control undesirable oscillations.  Default: 0
 //   smooth    = Smoothness criterion used with extra control points.  Set to 1 (minimize control-polygon length), 2 (minimize control-polygon bending) or 3 (minimize curve bending energy).   Default: 3
+//
+// Example(2D,NoAxes): Clamped curve (default)
+//   data = [[0,0], [10,30], [25,15], [40,35], [60,10], [80,25]];
+//   debug_nurbs_interp(data, 3);
+//
+// Example(2D,NoAxes): Closed curve (debug view)
+//   // Do NOT repeat the first point at the end.
+//   data = [[0,0], [30,50], [60,40], [80,10], [50,-20], [20,-10]];
+//   debug_nurbs_interp(data, 3, closed=true);
+
+
+
+
 
 function nurbs_interp(points, degree, method="centripetal", closed=false,
                       deriv=undef, start_deriv=undef, end_deriv=undef,
@@ -1985,689 +1998,6 @@ function nurbs_interp(points, degree, method="centripetal", closed=false,
     )
     [eff_type, degree, raw[0], raw[1], undef, undef, u];
 
-
-// ---------- CLAMPED interpolation ----------
-//
-// start_deriv=/end_deriv= and start_curvature=/end_curvature= are convenience shorthands.
-// They are merged into eff_der / eff_curv lists here so that all
-// constrained cases flow through a single solver
-// (_nurbs_interp_clamped_constrained).
-
-function _nurbs_interp_clamped(points, degree, method,
-                                deriv, start_deriv, end_deriv,
-                                curvature, start_curvature, end_curvature,
-                                corners, extra_pts=0, smooth=3) =
-    let(n = len(points) - 1, p = degree, dim = len(points[0]))
-    assert(n >= p,
-           str("nurbs_interp (clamped): need at least ", p+1,
-               " points for degree ", p, ", got ", n+1))
-    let(
-        eff_der  = _merge_deriv_list(n, deriv, dim=dim, start_deriv=start_deriv, end_deriv=end_deriv),
-        eff_curv = _merge_curv_list(n, curvature, dim=dim, start_curvature=start_curvature, end_curvature=end_curvature),
-
-        // C0 corner joints from NaN entries in eff_der and/or corners= list.
-        // Must be interior points; cannot coincide with curvature constraints.
-        nan_corners    = is_undef(eff_der) ? []
-                       : [for (k = [0:1:n]) if (is_nan(eff_der[k])) k],
-        explicit_corners = default(corners, []),
-        corner_idxs    = deduplicate(sort(concat(nan_corners, explicit_corners))),
-        has_corners    = len(corner_idxs) > 0,
-        bad_corner_end = [for (k = corner_idxs) if (k == 0 || k == n) k],
-        bad_corner_curv = is_undef(eff_curv) ? []
-                        : [for (k = corner_idxs) if (!is_undef(eff_curv[k])) k],
-        // Explicit corners= entries must not also carry a derivative constraint.
-        // (NaN-in-deriv corners are fine — they ARE the corner syntax.)
-        bad_corner_der  = is_undef(eff_der) ? []
-                        : [for (k = explicit_corners)
-                               if (!is_undef(eff_der[k]) && !is_nan(eff_der[k])) k],
-
-        // Exclude NaN corner markers from the derivative-constraint count.
-        has_any_der  = !is_undef(eff_der) &&
-                       len([for (k = [0:1:n])
-                                if (!is_undef(eff_der[k]) && !is_nan(eff_der[k])) k]) > 0,
-        has_any_curv = !is_undef(eff_curv) &&
-                       len([for (k = [0:1:n]) if (!is_undef(eff_curv[k])) k]) > 0,
-
-        // Every curvature-constrained point must also have a derivative
-        // constraint; the derivative direction defines the curve's tangent
-        // and is required to orient the curvature normal.
-        bad_curv_pts = is_undef(eff_curv) ? [] :
-            [for (k = [0:1:n])
-                if (!is_undef(eff_curv[k]) &&
-                    (is_undef(eff_der) || is_undef(eff_der[k])))
-                k]
-    )
-    assert(bad_corner_end == [],
-           str("nurbs_interp: corner cannot be at the first or last point: ", bad_corner_end))
-    assert(bad_corner_curv == [],
-           str("nurbs_interp: curvature constraint cannot coincide with a corner at: ", bad_corner_curv))
-    assert(bad_corner_der == [],
-           str("nurbs_interp: derivative constraint cannot coincide with a corner at: ", bad_corner_der))
-    assert(bad_curv_pts == [],
-           str("nurbs_interp: curvature constraint requires a derivative constraint ",
-               "at the same point(s): ", bad_curv_pts))
-    has_corners
-      ? _nurbs_interp_clamped_corners(points, p, method, eff_der, eff_curv, corner_idxs,
-                                       extra_pts=extra_pts, smooth=smooth)
-      : (has_any_der || has_any_curv || extra_pts > 0)
-        ? _nurbs_interp_clamped_constrained(points, p, method, eff_der, eff_curv, extra_pts, smooth)
-        : _nurbs_interp_clamped_basic(points, p, method, smooth);
-
-
-// Basic clamped interpolation (no derivatives).
-// n+1 points -> n+1 control points.
-
-function _nurbs_interp_clamped_basic(points, p, method, smooth=3) =
-    let(
-        n       = len(points) - 1,
-        M       = n + 1,
-        dim     = len(points[0]),
-        params  = _interp_params(points, method),
-        int_kn  = _avg_knots_interior(params, p),
-        U_full  = _full_clamped_knots(int_kn, p),
-        N_mat   = _collocation_matrix(params, n, p, U_full),
-        control = linear_solve(N_mat, points),
-        knots   = [0, each int_kn, 1]
-    )
-    assert(control != [],
-           "nurbs_interp (clamped): singular collocation matrix")
-    [control, knots, 0];
-
-
-// Assemble independently-solved clamped corner segments into one B-spline.
-//
-// All segments must be degree p.  Returns [ctrl, xknots, 0] — the standard
-// non-segmented result format that callers can pass directly to nurbs_curve /
-// debug_nurbs with type="clamped".
-//
-// BOSL2 clamped knot convention: nurbs_curve() takes xknots of length
-//   len(control) - degree + 1
-// and internally prepends (degree) zeros and appends (degree) ones to form
-// the full clamped knot vector.  For a C0 corner at global parameter s_c,
-// s_c must appear exactly p times in xknots (giving multiplicity p in the
-// full vector = C^0 continuity for degree p).
-//
-// Segment local knots seg[1] = [0, int_kn..., 1] are remapped to the
-// segment's global parameter interval [s_a, s_b] using
-//   k_global = s_a + (s_b - s_a) * k_local
-// which is consistent with any chord-proportional parameterization.
-
-function _combine_corner_segs(segments, params, corner_idxs, p) =
-    let(
-        n_segs  = len(segments),
-        // Global parameter at each corner junction.
-        cpar    = [for (c = corner_idxs) params[c]],
-        // Global interval [s_a, s_b] for each segment.
-        seg_sa  = [for (s = [0:1:n_segs-1]) s == 0         ? 0    : cpar[s-1]],
-        seg_sb  = [for (s = [0:1:n_segs-1]) s == n_segs-1  ? 1    : cpar[s]  ],
-        // Per-segment interior knots (exclude leading 0 and trailing 1),
-        // remapped from local [0,1] to the segment's global interval.
-        seg_gi  = [for (s = [0:1:n_segs-1])
-            let(
-                loc = [for (i = [1:1:len(segments[s][1])-2]) segments[s][1][i]],
-                sa  = seg_sa[s],
-                sb  = seg_sb[s]
-            )
-            [for (k = loc) sa + (sb - sa) * k]
-        ],
-        // Build combined xknots:
-        //   [0, seg0_int, corner0^p, seg1_int, corner1^p, ..., segN_int, 1]
-        interior = [for (s = [0:1:n_segs-1])
-            each concat(
-                seg_gi[s],
-                s < n_segs-1 ? repeat(cpar[s], p) : []
-            )
-        ],
-        xknots  = [0, each interior, 1],
-        // Combined control points: all of seg0, then seg[1:1:] for each later seg.
-        // The first control point of seg s (s >= 1) equals the last of seg s-1
-        // because both are the clamped-endpoint interpolant of the shared corner
-        // data point — so we drop the duplicate.
-        ctrl = [
-            each segments[0][0],
-            for (s = [1:1:n_segs-1])
-                for (j = [1:1:len(segments[s][0])-1])
-                    segments[s][0][j]
-        ]
-    )
-    [ctrl, xknots, 0];
-
-
-// Clamped interpolation with C0 corner joints.
-//
-// NaN entries in eff_der mark corners: the curve is split into independent
-// clamped segments at each corner index.  Each segment is solved at the
-// highest degree possible: min(p, m-1) where m is the segment point count.
-// Degree reduction silently handles short segments (e.g. only 2 or 3 data
-// points between adjacent corners).
-//
-// Segments that needed degree reduction are degree-elevated back to p
-// via nurbs_elevate_degree() so that all segments can be assembled into
-// a single clamped B-spline.  Elevated segments preserve their original
-// lower-degree shape but have higher knot multiplicity, so they are
-// less smooth at interior knots than natively degree-p segments.
-
-function _nurbs_interp_clamped_corners(points, p, method, eff_der, eff_curv, corner_idxs,
-                                       extra_pts=0, smooth=3) =
-    let(
-        n          = len(points) - 1,
-        params     = _interp_params(points, method),
-        seg_bounds = [0, each corner_idxs, n],
-        n_segs     = len(seg_bounds) - 1,
-        // Distribute extra_pts across eligible segments proportionally to
-        // their control-point count (= data-point count = seg_sizes[s]+1).
-        // Eligible = segments with seg_p >= 3, or seg_p == 2 when smooth == 1.
-        // Linear (seg_p==1) and quadratic with smooth!=1 get 0 extra_pts.
-        seg_sizes   = [for (s = [0:1:n_segs-1])
-                           seg_bounds[s+1] - seg_bounds[s]],
-        seg_degrees = [for (sz = seg_sizes) min(p, sz)],
-        // Weight = control-point count for eligible segments, 0 for ineligible.
-        seg_weights = [for (s = [0:1:n_segs-1])
-                           let(sp = seg_degrees[s])
-                           (sp >= 3 || (sp == 2 && smooth == 1))
-                             ? seg_sizes[s] + 1 : 0],
-        total_weight = max(1, sum(seg_weights)),
-        // Round up per-segment allocation so total >= extra_pts.
-        seg_extra   = extra_pts == 0 ? repeat(0, n_segs)
-                    : [for (s = [0:1:n_segs-1])
-                           seg_weights[s] == 0 ? 0
-                           : ceil(extra_pts * seg_weights[s] / total_weight)],
-        raw_segments = [for (s = [0:1:n_segs-1])
-            let(
-                i0       = seg_bounds[s],
-                i1       = seg_bounds[s+1],
-                seg_pts  = [for (k = [i0:1:i1]) points[k]],
-                // Reduce degree if the segment has fewer than p+1 points.
-                seg_p    = seg_degrees[s],
-                // Replace NaN corner markers with undef at shared endpoints.
-                seg_der  = is_undef(eff_der) ? undef
-                         : [for (k = [i0:1:i1])
-                                is_nan(eff_der[k]) ? undef : eff_der[k]],
-                seg_curv = is_undef(eff_curv) ? undef
-                         : [for (k = [i0:1:i1]) eff_curv[k]],
-                r        = _nurbs_interp_clamped(seg_pts, seg_p, method,
-                                                 seg_der, undef, undef,
-                                                 seg_curv, undef, undef,
-                                                 extra_pts=seg_extra[s],
-                                                 smooth=smooth)
-            )
-            [r[0], r[1], seg_p]   // [control, knots, degree]
-        ],
-        // Degree-elevate short segments to the full degree p.
-        segments = [for (seg = raw_segments)
-            seg[2] == p ? seg
-            : let(elev = nurbs_elevate_degree(seg[0], seg[2], seg[1],
-                              type="clamped", times=p - seg[2]))
-              [elev[2], elev[3], p]
-        ]
-    )
-    _combine_corner_segs(segments, params, corner_idxs, p);
-
-
-// General clamped interpolation with per-point derivative and/or curvature
-// constraints.
-//
-// eff_der:  list of n+1 first-derivative specs (undef = unconstrained).
-// eff_curv: list of n+1 curvature specs (undef = unconstrained).
-//           dim=2: signed scalar κ.  dim≥3: curvature vector.
-//
-// Uses Method A (expanded-parameter knot averaging, P&T §9.2.2): for each
-// constraint at index k, duplicate params[k] in an expanded sequence ũ —
-// once per constraint type (deriv and curvature each add one duplication per
-// constrained point).  This provides one extra DOF per extra constraint.
-
-function _nurbs_interp_clamped_constrained(points, p, method, eff_der, eff_curv,
-                                            extra_pts=0, smooth=3) =
-    let(
-        n         = len(points) - 1,
-        dim       = len(points[0]),
-        path_len  = path_length(points),
-        path_len2 = path_len * path_len,
-        params    = _interp_params(points, method),
-
-        // First-derivative specs: [index, C'(t) vector].
-        // eff_der entries are already dim-projected by _nurbs_interp_clamped.
-        der_specs = is_undef(eff_der) ? []
-                  : [for (k = [0:1:n]) if (!is_undef(eff_der[k]))
-                        [k, eff_der[k] * path_len]],
-
-        // Curvature specs: [index, C''(t) vector].
-        // eff_der and eff_curv are already dim-projected.
-        // Tangent from eff_der[k] when available; otherwise estimated from chord.
-        // Speed² from |eff_der[k]|² × path_len² when derivative given.
-        curv_specs = is_undef(eff_curv) ? []
-                   : [for (k = [0:1:n]) if (!is_undef(eff_curv[k]))
-                          let(
-                              t_from_der = is_undef(eff_der) ? undef : eff_der[k],
-                              tang_dir   = !is_undef(t_from_der) ? t_from_der
-                                         : k == 0 ? points[1] - points[0]
-                                         : k == n ? points[n] - points[n-1]
-                                         :          points[k+1] - points[k-1],
-                              v2         = !is_undef(t_from_der)
-                                         ? path_len2 * (t_from_der * t_from_der)
-                                         : path_len2
-                          )
-                          [k, _curv_to_d2(eff_curv[k], tang_dir, dim, v2)]
-                      ],
-
-        n_extra_der  = len(der_specs),
-        n_extra_curv = len(curv_specs),
-        _chk_curv_deg = assert(n_extra_curv == 0 || p >= 2,
-                               "nurbs_interp: curvature constraints require degree >= 2"),
-        n_constraint = n_extra_der + n_extra_curv,
-
-        // Build knots: average data params, insert at constraint spans,
-        // then insert extra_pts more at widest spans.
-        base_int       = _avg_knots_interior(params, p),
-        base_bar       = [0, each base_int, 1],
-        constraint_ts  = [for (spec = der_specs) params[spec[0]],
-                          for (spec = curv_specs) params[spec[0]]],
-        after_constr   = _insert_constraint_knots(base_bar, constraint_ts),
-        // For extra_pts, insert knots at midpoints of the widest spans.
-        // _widest_span_params silently caps the request at the available span count.
-        extra_ts       = extra_pts == 0 ? []
-                       : _widest_span_params(after_constr, extra_pts),
-        aug_bar_raw    = _insert_constraint_knots(after_constr, extra_ts),
-        n_spans_pre    = len(aug_bar_raw) - 1,
-        aug_bar_pre    = _fix_tiny_spans(aug_bar_raw, n_spans_pre),
-
-        // Split any knot span that contains multiple data parameters.
-        // Without this, two data points in the same span produce a
-        // rank-deficient collocation matrix (Schoenberg-Whitney condition).
-        occ_splits     = _span_split_params(aug_bar_pre, params),
-        n_occ          = len(occ_splits),
-        M              = n + 1 + n_constraint + len(extra_ts) + n_occ,
-        aug_bar        = n_occ == 0 ? aug_bar_pre
-                       : _fix_tiny_spans(
-                             sort([each aug_bar_pre, each occ_splits]),
-                             n_spans_pre + n_occ),
-        int_kn         = [for (i = [1:1:len(aug_bar)-2]) aug_bar[i]],
-        U_full         = _full_clamped_knots(int_kn, p),
-
-        // Constraint matrix A: interpolation + derivative + curvature rows.
-        // Dimensions: N_rows × M  where N_rows = (n+1) + n_constraint.
-        N_rows = n + 1 + n_constraint,
-
-        // Interpolation rows: N_{j,p}(t_k)
-        interp_rows = [for (k = [0:1:n])
-            [for (j = [0:1:M-1]) _nip(j, p, params[k], U_full)]
-        ],
-
-        // First-derivative rows: N'_{j,p}(t_k)
-        deriv_rows = [for (spec = der_specs)
-            let(k = spec[0])
-            [for (j = [0:1:M-1]) _dnip(j, p, params[k], U_full)]
-        ],
-
-        // Second-derivative rows: N''_{j,p}(t_k)
-        curv_rows = [for (spec = curv_specs)
-            let(k = spec[0])
-            [for (j = [0:1:M-1]) _d2nip(j, p, params[k], U_full)]
-        ],
-
-        A_constr = [each interp_rows, each deriv_rows, each curv_rows],
-        rhs_constr = [each points,
-                      for (spec = der_specs)  spec[1],
-                      for (spec = curv_specs) spec[1]],
-
-        knots   = [0, each int_kn, 1]
-    )
-    // When M == N_rows (square), try direct solve first.
-    // When M > N_rows (underdetermined from extra_pts or span splits),
-    // use null-space method: exact constraints + minimum-energy smoothing.
-    let(
-        direct = M == N_rows ? linear_solve(A_constr, rhs_constr) : []
-    )
-    direct != []
-    ? [direct, knots, 0]
-    : let(
-        R    = _regularization_matrix(M, smooth, p, U_full),
-        control = _nullspace_solve(R, A_constr, rhs_constr)
-      )
-      assert(!is_undef(control),
-             "nurbs_interp (clamped+constrained): rank-deficient constraint matrix")
-      [control, knots, 0];
-
-
-// ---------- CLOSED interpolation ----------
-
-function _nurbs_interp_closed(points, degree, method, deriv, curvature,
-                               corners, extra_pts=0, smooth=3) =
-    let(n = len(points), p = degree, dim = len(points[0]))
-    assert(n >= p + 1,
-           str("nurbs_interp (closed): need at least ", p+1,
-               " points for degree ", p, ", got ", n))
-    let(
-        // Detect C0 corners from NaN entries in the RAW deriv list before projection,
-        // since _merge_deriv_list would leave NaN entries intact but we detect them here.
-        nan_corners      = is_undef(deriv) ? []
-                         : [for (k = [0:1:n-1]) if (is_nan(deriv[k])) k],
-        explicit_corners = default(corners, []),
-        corner_idxs      = deduplicate(sort(concat(nan_corners, explicit_corners))),
-        has_corners      = len(corner_idxs) > 0,
-
-        // Project derivative and curvature lists (handles BOSL2 direction constants, etc.)
-        eff_der  = _merge_deriv_list(n-1, deriv, dim=dim),
-        eff_curv = _merge_curv_list(n-1, curvature, dim=dim),
-
-        has_dl = !is_undef(eff_der) &&
-                 len([for (k = [0:1:n-1])
-                          if (!is_undef(eff_der[k]) && !is_nan(eff_der[k])) k]) > 0,
-        has_cl = !is_undef(eff_curv) &&
-                 len([for (k = [0:1:n-1]) if (!is_undef(eff_curv[k])) k]) > 0,
-
-        // Every curvature-constrained point must also have a derivative constraint.
-        bad_curv_pts = is_undef(eff_curv) ? [] :
-            [for (k = [0:1:n-1])
-                if (!is_undef(eff_curv[k]) &&
-                    (is_undef(eff_der) || is_undef(eff_der[k])))
-                k],
-        // Curvature at a corner is not allowed.
-        bad_corner_curv = is_undef(eff_curv) ? []
-                        : [for (k = corner_idxs) if (!is_undef(eff_curv[k])) k],
-        // Derivative at an explicit corner is not allowed.
-        bad_corner_der  = is_undef(eff_der) ? []
-                        : [for (k = explicit_corners)
-                               if (!is_undef(eff_der[k]) && !is_nan(eff_der[k])) k]
-    )
-    assert(bad_curv_pts == [],
-           str("nurbs_interp: curvature constraint requires a derivative constraint ",
-               "at the same point(s): ", bad_curv_pts))
-    assert(bad_corner_curv == [],
-           str("nurbs_interp: curvature constraint cannot coincide with a corner at: ",
-               bad_corner_curv))
-    assert(bad_corner_der == [],
-           str("nurbs_interp: derivative constraint cannot coincide with a corner at: ",
-               bad_corner_der))
-    // Basic and constrained solvers handle rotation search internally.
-    // Corner case uses its own rotation (to the first corner).
-    has_corners
-      ? _nurbs_interp_closed_corners(points, p, method, eff_der, eff_curv, corner_idxs,
-                                      extra_pts=extra_pts, smooth=smooth)
-      : (has_dl || has_cl || extra_pts > 0)
-        ? let(
-              _raw_c = _closed_constrained_solve(points, p, method, eff_der, eff_curv,
-                                                  0, extra_pts, smooth),
-              _chk   = assert(!is_undef(_raw_c),
-                              "nurbs_interp (closed+constrained): rank-deficient constraint matrix")
-          ) _raw_c
-        : _nurbs_interp_closed_basic(points, p, method, smooth);
-
-
-// Closed interpolation with C0 corner joints.
-//
-// Converts the closed-with-corners problem into a clamped-with-corners
-// problem: rotate data so the first corner is at the start, duplicate
-// that point at the end to close the loop, remap remaining corners to
-// the rotated frame, and delegate to _nurbs_interp_clamped_corners.
-//
-// The result is a clamped B-spline whose first and last control points
-// coincide at the corner point.  r[3] = "clamped" tells convenience
-// functions to render with type="clamped" instead of "closed".
-
-function _nurbs_interp_closed_corners(points, p, method, deriv, curvature,
-                                       corner_idxs, extra_pts=0, smooth=3) =
-    let(
-        n   = len(points),   // n points (0..n-1), no repeat
-        rot = corner_idxs[0],
-
-        // Augmented point list: rotated + closing duplicate of first corner.
-        aug_pts = [for (k = [0:1:n-1]) points[(k + rot) % n],
-                   points[rot]],
-
-        // Remap remaining corners to rotated frame.
-        rot_corners = sort([for (i = [1:1:len(corner_idxs)-1])
-                               (corner_idxs[i] - rot + n) % n]),
-
-        // Rotate and augment deriv list.
-        // NaN at the rotation point (now start/end) is cleaned to undef
-        // since the corner is handled structurally by the clamped endpoints.
-        aug_der = is_undef(deriv) ? undef :
-            let(rd = [for (k = [0:1:n-1]) deriv[(k + rot) % n]],
-                d0 = is_nan(rd[0]) ? undef : rd[0])
-            [d0, for (k = [1:1:n-1]) rd[k], d0],
-
-        // Rotate and augment curvature list.
-        aug_curv = is_undef(curvature) ? undef :
-            let(rc = [for (k = [0:1:n-1]) curvature[(k + rot) % n]])
-            [rc[0], for (k = [1:1:n-1]) rc[k], rc[0]],
-
-        // Solve as clamped with corners.
-        result = _nurbs_interp_clamped_corners(aug_pts, p, method,
-                                                aug_der, aug_curv,
-                                                rot_corners,
-                                                extra_pts=extra_pts,
-                                                smooth=smooth)
-    )
-    // Return with the original rotation index and type override.
-    [result[0], result[1], rot, "clamped"];
-
-
-// Returns the maximum number of parameters that fall in any single active
-// knot span for cyclic rotation r.  A value of 1 is ideal (one parameter
-// per span); values > 1 indicate span collisions that may (but do not
-// always) cause a singular collocation matrix.
-
-function _closed_rotation_collision_count(points, n, p, method, r) =
-    let(
-        pts = select(points, r, r + n - 1),
-        rp  = _interp_params(pts, method, closed=true),
-        bk  = _fix_tiny_spans(_avg_knots_periodic(rp, p)[0], n),
-        U   = _full_closed_knots(bk, n, p),
-        ps  = add_scalar(rp, bk[p])
-    )
-    max([for (k = [0:1:n-1])
-            len([for (t = ps) if (t >= U[p+k] && t < U[p+k+1]) t])
-        ]);
-
-
-// Find the best seam rotation for closed curve interpolation.
-// The chord-ratio heuristic (argmax d[i+1]/d[i] + 1) is tried first.
-// If it has span collisions, all n rotations are scored by collision
-// count and the one with the fewest collisions is chosen.  Mild
-// collisions (max 2 params per span) often still produce a non-singular
-// system, so the final check is deferred to linear_solve().
-
-function _find_closed_rotation(points, n, p, method) =
-    let(
-        chords     = path_segment_lengths(points, closed=true),
-        ratios     = [for (i = [0:1:n-1]) chords[(i+1)%n] / max(chords[i], 1e-15)],
-        rot0       = (max_index(ratios) + 1) % n
-    )
-    _closed_rotation_collision_count(points, n, p, method, rot0) <= 1
-      ? rot0
-      : let(
-            scores = [for (i = [0:1:n-1])
-                         [_closed_rotation_collision_count(points, n, p, method, i), i]],
-            best   = min_index([for (s = scores) s[0]])
-        )
-        scores[best][1];
-
-
-// Solve a basic closed interpolation for a specific rotation.
-// Returns [control, bar_knots, rot] or undef if singular.
-
-function _closed_basic_solve(points, n, p, method, rot, smooth=3) =
-    let(
-        dim        = len(points[0]),
-        pts        = select(points, rot, rot + n - 1),
-        raw_params = _interp_params(pts, method, closed=true),
-        bar_knots  = _fix_tiny_spans(_avg_knots_periodic(raw_params, p)[0], n),
-        U_full     = _full_closed_knots(bar_knots, n, p),
-        params     = add_scalar(raw_params, bar_knots[p]),
-        N_mat      = _collocation_matrix_periodic(params, n, p, U_full),
-        control    = linear_solve(N_mat, pts)
-    )
-    control != [] ? [control, bar_knots, rot]
-    : // Singular — fall back to constrained optimization.
-      let(
-        M    = n,
-        R    = _regularization_matrix(M, smooth, p, U_full, periodic=true),
-        ctrl = _nullspace_solve(R, N_mat, pts)
-      )
-      is_undef(ctrl) ? undef : [ctrl, bar_knots, rot];
-
-
-// Basic closed interpolation — start-point independent.
-//
-// Implements the cyclic chord-length parameterization and cyclic knot
-// averaging of Piegl & Tiller §9.2.4.  In exact arithmetic the resulting
-// curve is the same regardless of which data point is listed first; only
-// the parametric origin changes (the curve is just reparameterized).
-// The chord-ratio heuristic selects the starting rotation.
-
-function _nurbs_interp_closed_basic(points, p, method, smooth=3) =
-    let(
-        n       = len(points),
-        rot0    = _find_closed_rotation(points, n, p, method),
-        result0 = _closed_basic_solve(points, n, p, method, rot0, smooth)
-    )
-    assert(!is_undef(result0),
-           "nurbs_interp (closed): singular system — try adding extra_pts= to relax the knot structure")
-    result0;
-
-
-// Solve a constrained closed interpolation for a specific rotation.
-// Returns [control, aug_bar, rot] or undef if singular.
-//
-// eff_der:  list of n first-derivative specs (undef = unconstrained).
-// eff_curv: list of n curvature specs (undef = unconstrained).
-//           dim=2: signed scalar κ or 2D vector.  dim≥3: curvature vector.
-//
-// Knot construction: standard periodic averaging of N data params,
-// then insert one knot per constraint at the midpoint of the span
-// containing its parameter (largest span first).
-// M control points use standard BOSL2 periodic aliasing:
-// B_j(t) = N_j(t) + (j<p ? N_{j+M}(t) : 0), and likewise for derivatives.
-
-function _closed_constrained_solve(points, p, method, eff_der, eff_curv, rot,
-                                    extra_pts=0, smooth=3) =
-    let(
-        n         = len(points),
-        dim       = len(points[0]),
-        path_len  = path_length(points, closed=true),
-        path_len2 = path_len * path_len,
-
-        // Rotate data, deriv, and curvature lists by the same offset so constraint
-        // associations are preserved after rotation.
-        pts    = select(points,  rot, rot + n - 1),
-        der_r  = is_undef(eff_der)  ? undef : select(eff_der,  rot, rot + n - 1),
-        curv_r = is_undef(eff_curv) ? undef : select(eff_curv, rot, rot + n - 1),
-
-        raw_params = _interp_params(pts, method, closed=true),
-
-        // First-derivative specs: [index, C'(t) vector].
-        // eff_der entries are already dim-projected by _nurbs_interp_closed.
-        der_specs = is_undef(der_r) ? []
-                  : [for (k = [0:1:n-1]) if (!is_undef(der_r[k]))
-                        [k, der_r[k] * path_len]],
-
-        // Curvature specs: [index, C''(t) vector].
-        // eff_curv entries are already dim-projected by _nurbs_interp_closed.
-        // Tangent from explicit derivative (required by caller; validated upstream).
-        curv_specs = is_undef(curv_r) ? []
-                   : [for (k = [0:1:n-1]) if (!is_undef(curv_r[k]))
-                          let(
-                              tang_dir = der_r[k],
-                              v2       = path_len2 * (tang_dir * tang_dir)
-                          )
-                          [k, _curv_to_d2(curv_r[k], tang_dir, dim, v2)]
-                      ],
-
-        n_extra_der  = len(der_specs),
-        n_extra_curv = len(curv_specs),
-        _chk_curv_deg = assert(n_extra_curv == 0 || p >= 2,
-                               "nurbs_interp: curvature constraints require degree >= 2"),
-        n_constraint = n_extra_der + n_extra_curv,
-
-        // Build bar_knots: standard periodic averaging of N data
-        // params, then insert knots for constraints and extra_pts.
-        base_bar       = _avg_knots_periodic(raw_params, p)[0],
-        constraint_idxs = [for (spec = der_specs) spec[0],
-                           for (spec = curv_specs) spec[0]],
-        constraint_ts  = [for (k = constraint_idxs) raw_params[k]],
-        after_constr   = _insert_constraint_knots(base_bar, constraint_ts),
-        // _widest_span_params silently caps the request at the available span count.
-        extra_ts       = extra_pts == 0 ? []
-                       : _widest_span_params(after_constr, extra_pts),
-        aug_bar_raw    = _insert_constraint_knots(after_constr, extra_ts),
-        // M_pre = span count of aug_bar_raw.  Use len()-1 rather than
-        // n+n_constraint+extra_pts so it reflects the actual knots inserted.
-        M_pre          = len(aug_bar_raw) - 1,
-        aug_bar_pre    = _fix_tiny_spans(aug_bar_raw, M_pre),
-
-        // Split any knot span that contains multiple data parameters.
-        // Without this, two data points in the same span produce a
-        // rank-deficient collocation matrix (§9.2.1 Schoenberg-Whitney).
-        occ_splits     = _span_split_params(aug_bar_pre, raw_params),
-        n_occ          = len(occ_splits),
-        M              = M_pre + n_occ,
-        aug_bar        = n_occ == 0 ? aug_bar_pre
-                       : _fix_tiny_spans(
-                             sort([each aug_bar_pre, each occ_splits]),
-                             M),
-        T              = aug_bar[M],
-        U_full         = _full_closed_knots(aug_bar, M, p),
-
-        // Map raw params into active domain [aug_bar[p], aug_bar[p]+T].
-        // Nudge any shifted parameter that lands on or near a knot.
-        raw_shifted = add_scalar(raw_params, aug_bar[p]),
-        eps_knot    = T / M * (p == 2 ? 0.01 : 1e-6),
-        params      = [for (k = [0:1:n-1])
-            let(
-                u     = raw_shifted[k],
-                d_min = min([for (j = [0:1:M + 2*p]) abs(u - U_full[j])])
-            )
-            d_min < eps_knot ? u + eps_knot : u
-        ],
-
-        // Constraint matrix A: interpolation + derivative + curvature rows.
-        N_rows = n + n_constraint,
-
-        // Interpolation rows: aliased basis for M control points
-        interp_rows = [for (k = [0:1:n-1])
-            [for (j = [0:1:M-1])
-                _nip(j, p, params[k], U_full)
-              + (j < p ? _nip(j + M, p, params[k], U_full) : 0)
-            ]
-        ],
-
-        // First-derivative rows: aliased derivative basis
-        deriv_rows = [for (spec = der_specs)
-            let(k = spec[0])
-            [for (j = [0:1:M-1])
-                _dnip(j, p, params[k], U_full)
-              + (j < p ? _dnip(j + M, p, params[k], U_full) : 0)
-            ]
-        ],
-
-        // Second-derivative rows: aliased second-derivative basis
-        curv_rows = [for (spec = curv_specs)
-            let(k = spec[0])
-            [for (j = [0:1:M-1])
-                _d2nip(j, p, params[k], U_full)
-              + (j < p ? _d2nip(j + M, p, params[k], U_full) : 0)
-            ]
-        ],
-
-        A_constr = [each interp_rows, each deriv_rows, each curv_rows],
-        rhs_constr = [each pts,
-                      for (spec = der_specs)  spec[1],
-                      for (spec = curv_specs) spec[1]]
-    )
-    // When M == N_rows (square), try direct solve first.
-    // When M > N_rows (underdetermined from extra_pts or span splits),
-    // use null-space method: exact constraints + minimum-energy smoothing.
-    let(
-        direct = M == N_rows ? linear_solve(A_constr, rhs_constr) : []
-    )
-    direct != []
-    ? [direct, aug_bar, rot]
-    : let(
-        R    = _regularization_matrix(M, smooth, p, U_full, periodic=true),
-        ctrl = _nullspace_solve(R, A_constr, rhs_constr)
-      )
-      is_undef(ctrl) ? undef : [ctrl, aug_bar, rot];
 
 
 // Section: Debug / Visualization
@@ -2842,290 +2172,6 @@ module debug_nurbs_interp(points, degree, splinesteps=16, method="centripetal",
             }
 }
 
-
-// Interpolation System Builder (shared by curve & surface)
-
-// Builds the collocation matrix and BOSL2-format knots for a single
-// parameterized direction.  Returns [N_mat, bosl2_knots].
-
-function _build_interp_system(params, p, type, extra_pts=0) =
-    type == "clamped" ? _build_clamped_system(params, p, extra_pts)
-  :                     _build_closed_system(params, p, extra_pts);
-
-function _build_clamped_system(params, p, extra_pts=0) =
-    let(
-        n       = len(params) - 1,
-        int_kn  = _avg_knots_interior(params, p),
-        base_bar = [0, each int_kn, 1]
-    )
-    extra_pts == 0
-    ? let(
-        U_full = _full_clamped_knots(int_kn, p),
-        N_mat  = _collocation_matrix(params, n, p, U_full),
-        knots  = [0, each int_kn, 1]
-      )
-      [N_mat, knots]
-    : let(
-        extra_ts    = _widest_span_params(base_bar, extra_pts),
-        aug_bar_raw = _insert_constraint_knots(base_bar, extra_ts),
-        occ_splits  = _span_split_params(aug_bar_raw, params),
-        n_occ       = len(occ_splits),
-        // Use len(extra_ts), not extra_pts: _widest_span_params silently caps
-        // the request at the number of available spans.
-        M           = n + 1 + len(extra_ts) + n_occ,
-        aug_bar_merged = n_occ == 0 ? aug_bar_raw
-                       : sort([each aug_bar_raw, each occ_splits]),
-        aug_bar     = _fix_tiny_spans(aug_bar_merged, len(aug_bar_merged) - 1),
-        aug_int     = [for (i = [1:1:len(aug_bar)-2]) aug_bar[i]],
-        U_full      = _full_clamped_knots(aug_int, p),
-        // Rectangular (n+1) × M matrix: n+1 data rows, M control columns.
-        // _collocation_matrix uses a single n for both dimensions, so build inline.
-        N_mat       = [for (k = [0:1:n])
-                           [for (j = [0:1:M-1]) _nip(j, p, params[k], U_full)]],
-        knots       = [0, each aug_int, 1]
-      )
-      [N_mat, knots];
-
-function _build_closed_system(params, p, extra_pts=0) =
-    let(
-        n          = len(params),
-        base_bar   = _fix_tiny_spans(_avg_knots_periodic(params, p)[0], n)
-    )
-    extra_pts == 0
-    ? let(
-        U_full     = _full_closed_knots(base_bar, n, p),
-        col_params = add_scalar(params, base_bar[p]),
-        T          = base_bar[n],
-        eps_knot   = T / n * (p == 2 ? 0.01 : 1e-6),
-        col_safe   = [for (k = [0:1:n-1])
-            let(
-                u     = col_params[k],
-                d_min = min([for (j = [0:1:n + 2*p]) abs(u - U_full[j])])
-            )
-            d_min < eps_knot ? u + eps_knot : u
-        ],
-        N_mat      = _collocation_matrix_periodic(col_safe, n, p, U_full)
-      )
-      [N_mat, base_bar]
-    : let(
-        extra_ts    = _widest_span_params(base_bar, extra_pts),
-        aug_bar_raw = _insert_constraint_knots(base_bar, extra_ts),
-        occ_splits  = _span_split_params(aug_bar_raw, params),
-        n_occ       = len(occ_splits),
-        // Use len(extra_ts), not extra_pts: _widest_span_params silently caps
-        // the request at the number of available spans.
-        M           = n + len(extra_ts) + n_occ,
-        aug_bar_merged = n_occ == 0 ? aug_bar_raw
-                       : sort([each aug_bar_raw, each occ_splits]),
-        aug_bar     = _fix_tiny_spans(aug_bar_merged, len(aug_bar_merged) - 1),
-        T           = aug_bar[M],
-        U_full      = _full_closed_knots(aug_bar, M, p),
-        raw_shifted = add_scalar(params, aug_bar[p]),
-        eps_knot    = T / M * (p == 2 ? 0.01 : 1e-6),
-        col_safe    = [for (k = [0:1:n-1])
-            let(
-                u     = raw_shifted[k],
-                d_min = min([for (j = [0:1:M + 2*p]) abs(u - U_full[j])])
-            )
-            d_min < eps_knot ? u + eps_knot : u
-        ],
-        // Rectangular n × M matrix: n data rows, M control columns.
-        // _collocation_matrix_periodic uses a single n for both dimensions, so
-        // build inline. Periodic wrapping folds basis j < p by adding N_{j+M}.
-        N_mat       = [for (k = [0:1:n-1])
-                           [for (j = [0:1:M-1])
-                               _nip(j, p, col_safe[k], U_full)
-                             + (j < p ? _nip(j + M, p, col_safe[k], U_full) : 0)
-                           ]]
-      )
-      [N_mat, aug_bar];
-
-
-// Build a clamped interpolation system with optional start/end first-derivative rows.
-// Extends _build_clamped_system by adding one extra DOF and one extra matrix row
-// for each active boundary (start and/or end).  Used for surface boundary tangents.
-//
-// has_sd / has_ed — whether a start / end derivative constraint is active.
-// extra_pts — number of additional control points (widens the system).
-// Returns [A_matrix, bosl2_knots].  Square when extra_pts==0, rectangular otherwise.
-// Row order: interpolation rows (k=0..n), deriv_start (if any), deriv_end (if any).
-
-function _build_clamped_system_with_derivs(params, p, has_sd, has_ed, extra_pts=0) =
-    let(
-        n       = len(params) - 1,
-        n_extra = (has_sd ? 1 : 0) + (has_ed ? 1 : 0),
-        // Average n+1 data params to get base interior knots, then
-        // insert extra knots for boundary constraints.  Each insertion
-        // bisects the span containing the constraint parameter
-        // (largest span first).  Constraint params 0 and 1 land in
-        // the first and last spans respectively.
-        base_int      = _avg_knots_interior(params, p),
-        base_bar      = [0, each base_int, 1],
-        constraint_ts = [if (has_sd) params[0], if (has_ed) params[n]],
-        after_constr  = _insert_constraint_knots(base_bar, constraint_ts),
-        // Insert extra_pts knots at widest spans.
-        extra_ts      = extra_pts == 0 ? []
-                      : _widest_span_params(after_constr, extra_pts),
-        aug_bar_raw   = extra_pts == 0 ? after_constr
-                      : _insert_constraint_knots(after_constr, extra_ts),
-        occ_splits    = extra_pts == 0 ? []
-                      : _span_split_params(aug_bar_raw, params),
-        n_occ         = len(occ_splits),
-        M             = n + 1 + n_extra + len(extra_ts) + n_occ,
-        aug_bar_merged = n_occ == 0 ? aug_bar_raw
-                       : sort([each aug_bar_raw, each occ_splits]),
-        aug_bar       = _fix_tiny_spans(aug_bar_merged, len(aug_bar_merged) - 1),
-        int_kn      = [for (i = [1:1:len(aug_bar)-2]) aug_bar[i]],
-        U_full      = _full_clamped_knots(int_kn, p),
-        interp_rows = [for (k = [0:1:n])
-                           [for (j = [0:1:M-1]) _nip(j, p, params[k], U_full)]
-                      ],
-        deriv_start = has_sd
-                    ? [[for (j = [0:1:M-1]) _dnip(j, p, params[0], U_full)]]
-                    : [],
-        deriv_end   = has_ed
-                    ? [[for (j = [0:1:M-1]) _dnip(j, p, params[n], U_full)]]
-                    : [],
-        knots       = [0, each int_kn, 1]
-    )
-    [[each interp_rows, each deriv_start, each deriv_end], knots];
-
-
-// Precompute per-segment interpolation systems for edge-aware surface solves.
-// All rows (or columns) share the same averaged parameterization, so the
-// collocation matrices only need to be built once.
-//
-// params    = averaged parameter values for this direction
-// p         = degree
-// edge_idxs = sorted list of interior indices where C0 edges occur
-// has_sd    = if true, first segment gets a start-derivative row
-// has_ed    = if true, last  segment gets an end-derivative row
-//
-// Returns a list of [N_mat, xknots, seg_p, i0, i1, seg_sd, seg_ed]
-// per segment, where seg_sd/seg_ed indicate whether that segment's
-// system includes a derivative row.
-
-function _build_edge_systems(params, p, edge_idxs,
-                              has_sd=false, has_ed=false, extra_pts=0, label="") =
-    let(
-        n          = len(params) - 1,
-        seg_bounds = [0, each edge_idxs, n],
-        n_segs     = len(seg_bounds) - 1,
-
-        // Pre-compute seg_p and available interior knot spans per segment.
-        // For a segment with n_pts data points at degree seg_p, the averaged
-        // interior knot vector has (n_pts-1) - seg_p entries = that many spans.
-        seg_n_pts   = [for (s = [0:1:n_segs-1]) seg_bounds[s+1] - seg_bounds[s] + 1],
-        seg_p_arr   = [for (npts = seg_n_pts) min(p, npts - 1)],
-        avail_spans = [for (i = [0:1:n_segs-1])
-                           max(0, seg_n_pts[i] - 1 - seg_p_arr[i])],
-        total_avail = sum(avail_spans),
-        k_use       = min(extra_pts, total_avail),
-
-        // Emit one diagnostic when extra_pts exceeds the combined span budget.
-        _echo = extra_pts > 0 && extra_pts > total_avail && label != ""
-              ? echo(str("nurbs_interp_surface: extra_pts (", label, "-direction)=",
-                         extra_pts, " exceeds available knot spans across ",
-                         n_segs, " segment(s) (max ", total_avail, " total); ",
-                         "reduced to ", total_avail, "."))
-              : 0,
-
-        // Distribute k_use proportionally to avail_spans, capped per segment.
-        seg_ep = extra_pts == 0 || total_avail == 0 ? repeat(0, n_segs)
-               : [for (s = [0:1:n_segs-1])
-                     avail_spans[s] == 0 ? 0
-                     : min(avail_spans[s],
-                           ceil(k_use * avail_spans[s] / total_avail))]
-    )
-    [for (s = [0:1:n_segs-1])
-        let(
-            i0      = seg_bounds[s],
-            i1      = seg_bounds[s+1],
-            seg_par = [for (k = [i0:1:i1]) params[k]],
-            // Remap to [0,1]
-            t0      = seg_par[0],
-            t1      = last(seg_par),
-            span    = max(t1 - t0, 1e-15),
-            local_p = [for (t = seg_par) (t - t0) / span],
-            seg_p   = seg_p_arr[s],
-            // Derivative extension requires at least seg_p+1 data points
-            // (same minimum as basic interpolation); each derivative row
-            // adds one control point and one equation, keeping the system
-            // square.  Degree-reduced segments with fewer points silently
-            // skip the constraint.
-            n_pts   = seg_n_pts[s],
-            seg_sd  = has_sd && s == 0          && n_pts >= seg_p + 1,
-            seg_ed  = has_ed && s == n_segs - 1 && n_pts >= seg_p + 1,
-            // extra_pts only applies when degree >= 2; silently skip for
-            // degree-reduced (seg_p < 2) segments.
-            cur_ep  = seg_p >= 2 ? seg_ep[s] : 0,
-            sys     = (seg_sd || seg_ed)
-                    ? _build_clamped_system_with_derivs(local_p, seg_p,
-                                                        seg_sd, seg_ed, cur_ep)
-                    : _build_interp_system(local_p, seg_p, "clamped", cur_ep)
-        )
-        [sys[0], sys[1], seg_p, i0, i1, seg_sd, seg_ed]
-    ];
-
-
-// Solve one row (or column) using precomputed edge-aware systems.
-// Each segment is solved independently; short segments are degree-elevated.
-// Results are assembled into a single clamped B-spline via _combine_corner_segs.
-//
-// systems    = list from _build_edge_systems
-// data       = row/column data points (same length as params)
-// params     = averaged parameter values
-// edge_idxs  = edge index list (same as passed to _build_edge_systems)
-// p          = target degree
-// start_deriv  = derivative vector at start of first segment (undef if none)
-// end_deriv    = derivative vector at end of last segment (undef if none)
-
-function _solve_with_edges(systems, data, params, edge_idxs, p,
-                            start_deriv=undef, end_deriv=undef, smooth=3) =
-    let(
-        raw_segments = [for (sys = systems)
-            let(
-                N_mat    = sys[0],
-                knots    = sys[1],
-                i0       = sys[3],
-                i1       = sys[4],
-                seg_p    = sys[2],
-                seg_sd   = sys[5],
-                seg_ed   = sys[6],
-                seg_data = [for (k = [i0:1:i1]) data[k]],
-                rhs      = concat(seg_data,
-                                  seg_sd ? [start_deriv] : [],
-                                  seg_ed ? [end_deriv]   : []),
-                M        = len(N_mat[0]),
-                N_rows   = len(rhs),
-                // When M > N_rows the segment system is underdetermined (extra_pts).
-                // Use null-space method: exact interpolation + minimum bending energy.
-                ctrl = M > N_rows
-                     ? let(
-                         int_kn     = [for (i = [1:1:len(knots)-2]) knots[i]],
-                         U_full     = _full_clamped_knots(int_kn, seg_p),
-                         eff_smooth = (smooth == 3 && seg_p < 2) ? 2 : smooth,
-                         R          = _regularization_matrix(M, eff_smooth, seg_p, U_full)
-                       )
-                       _nullspace_solve(R, N_mat, rhs)
-                     : linear_solve(N_mat, rhs)
-            )
-            assert(ctrl != [] && !is_undef(ctrl),
-                   str("nurbs_interp_surface: singular edge-segment system for rows/cols ",
-                       i0, "-", i1, " (", i1-i0+1, " points, degree ", seg_p,
-                       seg_sd ? ", start deriv" : "",
-                       seg_ed ? ", end deriv" : "", ")"))
-            [ctrl, knots, seg_p]
-        ],
-        // Degree-elevate short segments to full degree p.
-        segments = [for (seg = raw_segments)
-            seg[2] == p ? seg
-            : let(elev = nurbs_elevate_degree(seg[0], seg[2], seg[1],
-                              type="clamped", times=p - seg[2]))
-              [elev[2], elev[3], p]
-        ]
-    )
-    _combine_corner_segs(segments, params, edge_idxs, p);
 
 
 // Section: NURBS Surface Interpolation
@@ -3894,6 +2940,977 @@ module nurbs_interp_surface(points, degree, splinesteps=16,
                 for (pt = row)
                     translate(pt) sphere(r=data_size, $fn=16);
 }
+
+
+// ---------- CLAMPED interpolation ----------
+//
+// start_deriv=/end_deriv= and start_curvature=/end_curvature= are convenience shorthands.
+// They are merged into eff_der / eff_curv lists here so that all
+// constrained cases flow through a single solver
+// (_nurbs_interp_clamped_constrained).
+
+function _nurbs_interp_clamped(points, degree, method,
+                                deriv, start_deriv, end_deriv,
+                                curvature, start_curvature, end_curvature,
+                                corners, extra_pts=0, smooth=3) =
+    let(n = len(points) - 1, p = degree, dim = len(points[0]))
+    assert(n >= p,
+           str("nurbs_interp (clamped): need at least ", p+1,
+               " points for degree ", p, ", got ", n+1))
+    let(
+        eff_der  = _merge_deriv_list(n, deriv, dim=dim, start_deriv=start_deriv, end_deriv=end_deriv),
+        eff_curv = _merge_curv_list(n, curvature, dim=dim, start_curvature=start_curvature, end_curvature=end_curvature),
+
+        // C0 corner joints from NaN entries in eff_der and/or corners= list.
+        // Must be interior points; cannot coincide with curvature constraints.
+        nan_corners    = is_undef(eff_der) ? []
+                       : [for (k = [0:1:n]) if (is_nan(eff_der[k])) k],
+        explicit_corners = default(corners, []),
+        corner_idxs    = deduplicate(sort(concat(nan_corners, explicit_corners))),
+        has_corners    = len(corner_idxs) > 0,
+        bad_corner_end = [for (k = corner_idxs) if (k == 0 || k == n) k],
+        bad_corner_curv = is_undef(eff_curv) ? []
+                        : [for (k = corner_idxs) if (!is_undef(eff_curv[k])) k],
+        // Explicit corners= entries must not also carry a derivative constraint.
+        // (NaN-in-deriv corners are fine — they ARE the corner syntax.)
+        bad_corner_der  = is_undef(eff_der) ? []
+                        : [for (k = explicit_corners)
+                               if (!is_undef(eff_der[k]) && !is_nan(eff_der[k])) k],
+
+        // Exclude NaN corner markers from the derivative-constraint count.
+        has_any_der  = !is_undef(eff_der) &&
+                       len([for (k = [0:1:n])
+                                if (!is_undef(eff_der[k]) && !is_nan(eff_der[k])) k]) > 0,
+        has_any_curv = !is_undef(eff_curv) &&
+                       len([for (k = [0:1:n]) if (!is_undef(eff_curv[k])) k]) > 0,
+
+        // Every curvature-constrained point must also have a derivative
+        // constraint; the derivative direction defines the curve's tangent
+        // and is required to orient the curvature normal.
+        bad_curv_pts = is_undef(eff_curv) ? [] :
+            [for (k = [0:1:n])
+                if (!is_undef(eff_curv[k]) &&
+                    (is_undef(eff_der) || is_undef(eff_der[k])))
+                k]
+    )
+    assert(bad_corner_end == [],
+           str("nurbs_interp: corner cannot be at the first or last point: ", bad_corner_end))
+    assert(bad_corner_curv == [],
+           str("nurbs_interp: curvature constraint cannot coincide with a corner at: ", bad_corner_curv))
+    assert(bad_corner_der == [],
+           str("nurbs_interp: derivative constraint cannot coincide with a corner at: ", bad_corner_der))
+    assert(bad_curv_pts == [],
+           str("nurbs_interp: curvature constraint requires a derivative constraint ",
+               "at the same point(s): ", bad_curv_pts))
+    has_corners
+      ? _nurbs_interp_clamped_corners(points, p, method, eff_der, eff_curv, corner_idxs,
+                                       extra_pts=extra_pts, smooth=smooth)
+      : (has_any_der || has_any_curv || extra_pts > 0)
+        ? _nurbs_interp_clamped_constrained(points, p, method, eff_der, eff_curv, extra_pts, smooth)
+        : _nurbs_interp_clamped_basic(points, p, method, smooth);
+
+
+// Basic clamped interpolation (no derivatives).
+// n+1 points -> n+1 control points.
+
+function _nurbs_interp_clamped_basic(points, p, method, smooth=3) =
+    let(
+        n       = len(points) - 1,
+        M       = n + 1,
+        dim     = len(points[0]),
+        params  = _interp_params(points, method),
+        int_kn  = _avg_knots_interior(params, p),
+        U_full  = _full_clamped_knots(int_kn, p),
+        N_mat   = _collocation_matrix(params, n, p, U_full),
+        control = linear_solve(N_mat, points),
+        knots   = [0, each int_kn, 1]
+    )
+    assert(control != [],
+           "nurbs_interp (clamped): singular collocation matrix")
+    [control, knots, 0];
+
+
+// Assemble independently-solved clamped corner segments into one B-spline.
+//
+// All segments must be degree p.  Returns [ctrl, xknots, 0] — the standard
+// non-segmented result format that callers can pass directly to nurbs_curve /
+// debug_nurbs with type="clamped".
+//
+// BOSL2 clamped knot convention: nurbs_curve() takes xknots of length
+//   len(control) - degree + 1
+// and internally prepends (degree) zeros and appends (degree) ones to form
+// the full clamped knot vector.  For a C0 corner at global parameter s_c,
+// s_c must appear exactly p times in xknots (giving multiplicity p in the
+// full vector = C^0 continuity for degree p).
+//
+// Segment local knots seg[1] = [0, int_kn..., 1] are remapped to the
+// segment's global parameter interval [s_a, s_b] using
+//   k_global = s_a + (s_b - s_a) * k_local
+// which is consistent with any chord-proportional parameterization.
+
+function _combine_corner_segs(segments, params, corner_idxs, p) =
+    let(
+        n_segs  = len(segments),
+        // Global parameter at each corner junction.
+        cpar    = [for (c = corner_idxs) params[c]],
+        // Global interval [s_a, s_b] for each segment.
+        seg_sa  = [for (s = [0:1:n_segs-1]) s == 0         ? 0    : cpar[s-1]],
+        seg_sb  = [for (s = [0:1:n_segs-1]) s == n_segs-1  ? 1    : cpar[s]  ],
+        // Per-segment interior knots (exclude leading 0 and trailing 1),
+        // remapped from local [0,1] to the segment's global interval.
+        seg_gi  = [for (s = [0:1:n_segs-1])
+            let(
+                loc = [for (i = [1:1:len(segments[s][1])-2]) segments[s][1][i]],
+                sa  = seg_sa[s],
+                sb  = seg_sb[s]
+            )
+            [for (k = loc) sa + (sb - sa) * k]
+        ],
+        // Build combined xknots:
+        //   [0, seg0_int, corner0^p, seg1_int, corner1^p, ..., segN_int, 1]
+        interior = [for (s = [0:1:n_segs-1])
+            each concat(
+                seg_gi[s],
+                s < n_segs-1 ? repeat(cpar[s], p) : []
+            )
+        ],
+        xknots  = [0, each interior, 1],
+        // Combined control points: all of seg0, then seg[1:1:] for each later seg.
+        // The first control point of seg s (s >= 1) equals the last of seg s-1
+        // because both are the clamped-endpoint interpolant of the shared corner
+        // data point — so we drop the duplicate.
+        ctrl = [
+            each segments[0][0],
+            for (s = [1:1:n_segs-1])
+                for (j = [1:1:len(segments[s][0])-1])
+                    segments[s][0][j]
+        ]
+    )
+    [ctrl, xknots, 0];
+
+
+// Clamped interpolation with C0 corner joints.
+//
+// NaN entries in eff_der mark corners: the curve is split into independent
+// clamped segments at each corner index.  Each segment is solved at the
+// highest degree possible: min(p, m-1) where m is the segment point count.
+// Degree reduction silently handles short segments (e.g. only 2 or 3 data
+// points between adjacent corners).
+//
+// Segments that needed degree reduction are degree-elevated back to p
+// via nurbs_elevate_degree() so that all segments can be assembled into
+// a single clamped B-spline.  Elevated segments preserve their original
+// lower-degree shape but have higher knot multiplicity, so they are
+// less smooth at interior knots than natively degree-p segments.
+
+function _nurbs_interp_clamped_corners(points, p, method, eff_der, eff_curv, corner_idxs,
+                                       extra_pts=0, smooth=3) =
+    let(
+        n          = len(points) - 1,
+        params     = _interp_params(points, method),
+        seg_bounds = [0, each corner_idxs, n],
+        n_segs     = len(seg_bounds) - 1,
+        // Distribute extra_pts across eligible segments proportionally to
+        // their control-point count (= data-point count = seg_sizes[s]+1).
+        // Eligible = segments with seg_p >= 3, or seg_p == 2 when smooth == 1.
+        // Linear (seg_p==1) and quadratic with smooth!=1 get 0 extra_pts.
+        seg_sizes   = [for (s = [0:1:n_segs-1])
+                           seg_bounds[s+1] - seg_bounds[s]],
+        seg_degrees = [for (sz = seg_sizes) min(p, sz)],
+        // Weight = control-point count for eligible segments, 0 for ineligible.
+        seg_weights = [for (s = [0:1:n_segs-1])
+                           let(sp = seg_degrees[s])
+                           (sp >= 3 || (sp == 2 && smooth == 1))
+                             ? seg_sizes[s] + 1 : 0],
+        total_weight = max(1, sum(seg_weights)),
+        // Round up per-segment allocation so total >= extra_pts.
+        seg_extra   = extra_pts == 0 ? repeat(0, n_segs)
+                    : [for (s = [0:1:n_segs-1])
+                           seg_weights[s] == 0 ? 0
+                           : ceil(extra_pts * seg_weights[s] / total_weight)],
+        raw_segments = [for (s = [0:1:n_segs-1])
+            let(
+                i0       = seg_bounds[s],
+                i1       = seg_bounds[s+1],
+                seg_pts  = [for (k = [i0:1:i1]) points[k]],
+                // Reduce degree if the segment has fewer than p+1 points.
+                seg_p    = seg_degrees[s],
+                // Replace NaN corner markers with undef at shared endpoints.
+                seg_der  = is_undef(eff_der) ? undef
+                         : [for (k = [i0:1:i1])
+                                is_nan(eff_der[k]) ? undef : eff_der[k]],
+                seg_curv = is_undef(eff_curv) ? undef
+                         : [for (k = [i0:1:i1]) eff_curv[k]],
+                r        = _nurbs_interp_clamped(seg_pts, seg_p, method,
+                                                 seg_der, undef, undef,
+                                                 seg_curv, undef, undef,
+                                                 extra_pts=seg_extra[s],
+                                                 smooth=smooth)
+            )
+            [r[0], r[1], seg_p]   // [control, knots, degree]
+        ],
+        // Degree-elevate short segments to the full degree p.
+        segments = [for (seg = raw_segments)
+            seg[2] == p ? seg
+            : let(elev = nurbs_elevate_degree(seg[0], seg[2], seg[1],
+                              type="clamped", times=p - seg[2]))
+              [elev[2], elev[3], p]
+        ]
+    )
+    _combine_corner_segs(segments, params, corner_idxs, p);
+
+
+// General clamped interpolation with per-point derivative and/or curvature
+// constraints.
+//
+// eff_der:  list of n+1 first-derivative specs (undef = unconstrained).
+// eff_curv: list of n+1 curvature specs (undef = unconstrained).
+//           dim=2: signed scalar κ.  dim≥3: curvature vector.
+//
+// Uses Method A (expanded-parameter knot averaging, P&T §9.2.2): for each
+// constraint at index k, duplicate params[k] in an expanded sequence ũ —
+// once per constraint type (deriv and curvature each add one duplication per
+// constrained point).  This provides one extra DOF per extra constraint.
+
+function _nurbs_interp_clamped_constrained(points, p, method, eff_der, eff_curv,
+                                            extra_pts=0, smooth=3) =
+    let(
+        n         = len(points) - 1,
+        dim       = len(points[0]),
+        path_len  = path_length(points),
+        path_len2 = path_len * path_len,
+        params    = _interp_params(points, method),
+
+        // First-derivative specs: [index, C'(t) vector].
+        // eff_der entries are already dim-projected by _nurbs_interp_clamped.
+        der_specs = is_undef(eff_der) ? []
+                  : [for (k = [0:1:n]) if (!is_undef(eff_der[k]))
+                        [k, eff_der[k] * path_len]],
+
+        // Curvature specs: [index, C''(t) vector].
+        // eff_der and eff_curv are already dim-projected.
+        // Tangent from eff_der[k] when available; otherwise estimated from chord.
+        // Speed² from |eff_der[k]|² × path_len² when derivative given.
+        curv_specs = is_undef(eff_curv) ? []
+                   : [for (k = [0:1:n]) if (!is_undef(eff_curv[k]))
+                          let(
+                              t_from_der = is_undef(eff_der) ? undef : eff_der[k],
+                              tang_dir   = !is_undef(t_from_der) ? t_from_der
+                                         : k == 0 ? points[1] - points[0]
+                                         : k == n ? points[n] - points[n-1]
+                                         :          points[k+1] - points[k-1],
+                              v2         = !is_undef(t_from_der)
+                                         ? path_len2 * (t_from_der * t_from_der)
+                                         : path_len2
+                          )
+                          [k, _curv_to_d2(eff_curv[k], tang_dir, dim, v2)]
+                      ],
+
+        n_extra_der  = len(der_specs),
+        n_extra_curv = len(curv_specs),
+        _chk_curv_deg = assert(n_extra_curv == 0 || p >= 2,
+                               "nurbs_interp: curvature constraints require degree >= 2"),
+        n_constraint = n_extra_der + n_extra_curv,
+
+        // Build knots: average data params, insert at constraint spans,
+        // then insert extra_pts more at widest spans.
+        base_int       = _avg_knots_interior(params, p),
+        base_bar       = [0, each base_int, 1],
+        constraint_ts  = [for (spec = der_specs) params[spec[0]],
+                          for (spec = curv_specs) params[spec[0]]],
+        after_constr   = _insert_constraint_knots(base_bar, constraint_ts),
+        // For extra_pts, insert knots at midpoints of the widest spans.
+        // _widest_span_params silently caps the request at the available span count.
+        extra_ts       = extra_pts == 0 ? []
+                       : _widest_span_params(after_constr, extra_pts),
+        aug_bar_raw    = _insert_constraint_knots(after_constr, extra_ts),
+        n_spans_pre    = len(aug_bar_raw) - 1,
+        aug_bar_pre    = _fix_tiny_spans(aug_bar_raw, n_spans_pre),
+
+        // Split any knot span that contains multiple data parameters.
+        // Without this, two data points in the same span produce a
+        // rank-deficient collocation matrix (Schoenberg-Whitney condition).
+        occ_splits     = _span_split_params(aug_bar_pre, params),
+        n_occ          = len(occ_splits),
+        M              = n + 1 + n_constraint + len(extra_ts) + n_occ,
+        aug_bar        = n_occ == 0 ? aug_bar_pre
+                       : _fix_tiny_spans(
+                             sort([each aug_bar_pre, each occ_splits]),
+                             n_spans_pre + n_occ),
+        int_kn         = [for (i = [1:1:len(aug_bar)-2]) aug_bar[i]],
+        U_full         = _full_clamped_knots(int_kn, p),
+
+        // Constraint matrix A: interpolation + derivative + curvature rows.
+        // Dimensions: N_rows × M  where N_rows = (n+1) + n_constraint.
+        N_rows = n + 1 + n_constraint,
+
+        // Interpolation rows: N_{j,p}(t_k)
+        interp_rows = [for (k = [0:1:n])
+            [for (j = [0:1:M-1]) _nip(j, p, params[k], U_full)]
+        ],
+
+        // First-derivative rows: N'_{j,p}(t_k)
+        deriv_rows = [for (spec = der_specs)
+            let(k = spec[0])
+            [for (j = [0:1:M-1]) _dnip(j, p, params[k], U_full)]
+        ],
+
+        // Second-derivative rows: N''_{j,p}(t_k)
+        curv_rows = [for (spec = curv_specs)
+            let(k = spec[0])
+            [for (j = [0:1:M-1]) _d2nip(j, p, params[k], U_full)]
+        ],
+
+        A_constr = [each interp_rows, each deriv_rows, each curv_rows],
+        rhs_constr = [each points,
+                      for (spec = der_specs)  spec[1],
+                      for (spec = curv_specs) spec[1]],
+
+        knots   = [0, each int_kn, 1]
+    )
+    // When M == N_rows (square), try direct solve first.
+    // When M > N_rows (underdetermined from extra_pts or span splits),
+    // use null-space method: exact constraints + minimum-energy smoothing.
+    let(
+        direct = M == N_rows ? linear_solve(A_constr, rhs_constr) : []
+    )
+    direct != []
+    ? [direct, knots, 0]
+    : let(
+        R    = _regularization_matrix(M, smooth, p, U_full),
+        control = _nullspace_solve(R, A_constr, rhs_constr)
+      )
+      assert(!is_undef(control),
+             "nurbs_interp (clamped+constrained): rank-deficient constraint matrix")
+      [control, knots, 0];
+
+// ---------- INTERNAL FUNCTIONS ------------
+//
+// ---------- CLOSED interpolation ----------
+
+function _nurbs_interp_closed(points, degree, method, deriv, curvature,
+                               corners, extra_pts=0, smooth=3) =
+    let(n = len(points), p = degree, dim = len(points[0]))
+    assert(n >= p + 1,
+           str("nurbs_interp (closed): need at least ", p+1,
+               " points for degree ", p, ", got ", n))
+    let(
+        // Detect C0 corners from NaN entries in the RAW deriv list before projection,
+        // since _merge_deriv_list would leave NaN entries intact but we detect them here.
+        nan_corners      = is_undef(deriv) ? []
+                         : [for (k = [0:1:n-1]) if (is_nan(deriv[k])) k],
+        explicit_corners = default(corners, []),
+        corner_idxs      = deduplicate(sort(concat(nan_corners, explicit_corners))),
+        has_corners      = len(corner_idxs) > 0,
+
+        // Project derivative and curvature lists (handles BOSL2 direction constants, etc.)
+        eff_der  = _merge_deriv_list(n-1, deriv, dim=dim),
+        eff_curv = _merge_curv_list(n-1, curvature, dim=dim),
+
+        has_dl = !is_undef(eff_der) &&
+                 len([for (k = [0:1:n-1])
+                          if (!is_undef(eff_der[k]) && !is_nan(eff_der[k])) k]) > 0,
+        has_cl = !is_undef(eff_curv) &&
+                 len([for (k = [0:1:n-1]) if (!is_undef(eff_curv[k])) k]) > 0,
+
+        // Every curvature-constrained point must also have a derivative constraint.
+        bad_curv_pts = is_undef(eff_curv) ? [] :
+            [for (k = [0:1:n-1])
+                if (!is_undef(eff_curv[k]) &&
+                    (is_undef(eff_der) || is_undef(eff_der[k])))
+                k],
+        // Curvature at a corner is not allowed.
+        bad_corner_curv = is_undef(eff_curv) ? []
+                        : [for (k = corner_idxs) if (!is_undef(eff_curv[k])) k],
+        // Derivative at an explicit corner is not allowed.
+        bad_corner_der  = is_undef(eff_der) ? []
+                        : [for (k = explicit_corners)
+                               if (!is_undef(eff_der[k]) && !is_nan(eff_der[k])) k]
+    )
+    assert(bad_curv_pts == [],
+           str("nurbs_interp: curvature constraint requires a derivative constraint ",
+               "at the same point(s): ", bad_curv_pts))
+    assert(bad_corner_curv == [],
+           str("nurbs_interp: curvature constraint cannot coincide with a corner at: ",
+               bad_corner_curv))
+    assert(bad_corner_der == [],
+           str("nurbs_interp: derivative constraint cannot coincide with a corner at: ",
+               bad_corner_der))
+    // Basic and constrained solvers handle rotation search internally.
+    // Corner case uses its own rotation (to the first corner).
+    has_corners
+      ? _nurbs_interp_closed_corners(points, p, method, eff_der, eff_curv, corner_idxs,
+                                      extra_pts=extra_pts, smooth=smooth)
+      : (has_dl || has_cl || extra_pts > 0)
+        ? let(
+              _raw_c = _closed_constrained_solve(points, p, method, eff_der, eff_curv,
+                                                  0, extra_pts, smooth),
+              _chk   = assert(!is_undef(_raw_c),
+                              "nurbs_interp (closed+constrained): rank-deficient constraint matrix")
+          ) _raw_c
+        : _nurbs_interp_closed_basic(points, p, method, smooth);
+
+
+// Closed interpolation with C0 corner joints.
+//
+// Converts the closed-with-corners problem into a clamped-with-corners
+// problem: rotate data so the first corner is at the start, duplicate
+// that point at the end to close the loop, remap remaining corners to
+// the rotated frame, and delegate to _nurbs_interp_clamped_corners.
+//
+// The result is a clamped B-spline whose first and last control points
+// coincide at the corner point.  r[3] = "clamped" tells convenience
+// functions to render with type="clamped" instead of "closed".
+
+function _nurbs_interp_closed_corners(points, p, method, deriv, curvature,
+                                       corner_idxs, extra_pts=0, smooth=3) =
+    let(
+        n   = len(points),   // n points (0..n-1), no repeat
+        rot = corner_idxs[0],
+
+        // Augmented point list: rotated + closing duplicate of first corner.
+        aug_pts = [for (k = [0:1:n-1]) points[(k + rot) % n],
+                   points[rot]],
+
+        // Remap remaining corners to rotated frame.
+        rot_corners = sort([for (i = [1:1:len(corner_idxs)-1])
+                               (corner_idxs[i] - rot + n) % n]),
+
+        // Rotate and augment deriv list.
+        // NaN at the rotation point (now start/end) is cleaned to undef
+        // since the corner is handled structurally by the clamped endpoints.
+        aug_der = is_undef(deriv) ? undef :
+            let(rd = [for (k = [0:1:n-1]) deriv[(k + rot) % n]],
+                d0 = is_nan(rd[0]) ? undef : rd[0])
+            [d0, for (k = [1:1:n-1]) rd[k], d0],
+
+        // Rotate and augment curvature list.
+        aug_curv = is_undef(curvature) ? undef :
+            let(rc = [for (k = [0:1:n-1]) curvature[(k + rot) % n]])
+            [rc[0], for (k = [1:1:n-1]) rc[k], rc[0]],
+
+        // Solve as clamped with corners.
+        result = _nurbs_interp_clamped_corners(aug_pts, p, method,
+                                                aug_der, aug_curv,
+                                                rot_corners,
+                                                extra_pts=extra_pts,
+                                                smooth=smooth)
+    )
+    // Return with the original rotation index and type override.
+    [result[0], result[1], rot, "clamped"];
+
+
+// Returns the maximum number of parameters that fall in any single active
+// knot span for cyclic rotation r.  A value of 1 is ideal (one parameter
+// per span); values > 1 indicate span collisions that may (but do not
+// always) cause a singular collocation matrix.
+
+function _closed_rotation_collision_count(points, n, p, method, r) =
+    let(
+        pts = select(points, r, r + n - 1),
+        rp  = _interp_params(pts, method, closed=true),
+        bk  = _fix_tiny_spans(_avg_knots_periodic(rp, p)[0], n),
+        U   = _full_closed_knots(bk, n, p),
+        ps  = add_scalar(rp, bk[p])
+    )
+    max([for (k = [0:1:n-1])
+            len([for (t = ps) if (t >= U[p+k] && t < U[p+k+1]) t])
+        ]);
+
+
+// Find the best seam rotation for closed curve interpolation.
+// The chord-ratio heuristic (argmax d[i+1]/d[i] + 1) is tried first.
+// If it has span collisions, all n rotations are scored by collision
+// count and the one with the fewest collisions is chosen.  Mild
+// collisions (max 2 params per span) often still produce a non-singular
+// system, so the final check is deferred to linear_solve().
+
+function _find_closed_rotation(points, n, p, method) =
+    let(
+        chords     = path_segment_lengths(points, closed=true),
+        ratios     = [for (i = [0:1:n-1]) chords[(i+1)%n] / max(chords[i], 1e-15)],
+        rot0       = (max_index(ratios) + 1) % n
+    )
+    _closed_rotation_collision_count(points, n, p, method, rot0) <= 1
+      ? rot0
+      : let(
+            scores = [for (i = [0:1:n-1])
+                         [_closed_rotation_collision_count(points, n, p, method, i), i]],
+            best   = min_index([for (s = scores) s[0]])
+        )
+        scores[best][1];
+
+
+// Solve a basic closed interpolation for a specific rotation.
+// Returns [control, bar_knots, rot] or undef if singular.
+
+function _closed_basic_solve(points, n, p, method, rot, smooth=3) =
+    let(
+        dim        = len(points[0]),
+        pts        = select(points, rot, rot + n - 1),
+        raw_params = _interp_params(pts, method, closed=true),
+        bar_knots  = _fix_tiny_spans(_avg_knots_periodic(raw_params, p)[0], n),
+        U_full     = _full_closed_knots(bar_knots, n, p),
+        params     = add_scalar(raw_params, bar_knots[p]),
+        N_mat      = _collocation_matrix_periodic(params, n, p, U_full),
+        control    = linear_solve(N_mat, pts)
+    )
+    control != [] ? [control, bar_knots, rot]
+    : // Singular — fall back to constrained optimization.
+      let(
+        M    = n,
+        R    = _regularization_matrix(M, smooth, p, U_full, periodic=true),
+        ctrl = _nullspace_solve(R, N_mat, pts)
+      )
+      is_undef(ctrl) ? undef : [ctrl, bar_knots, rot];
+
+
+// Basic closed interpolation — start-point independent.
+//
+// Implements the cyclic chord-length parameterization and cyclic knot
+// averaging of Piegl & Tiller §9.2.4.  In exact arithmetic the resulting
+// curve is the same regardless of which data point is listed first; only
+// the parametric origin changes (the curve is just reparameterized).
+// The chord-ratio heuristic selects the starting rotation.
+
+function _nurbs_interp_closed_basic(points, p, method, smooth=3) =
+    let(
+        n       = len(points),
+        rot0    = _find_closed_rotation(points, n, p, method),
+        result0 = _closed_basic_solve(points, n, p, method, rot0, smooth)
+    )
+    assert(!is_undef(result0),
+           "nurbs_interp (closed): singular system — try adding extra_pts= to relax the knot structure")
+    result0;
+
+
+// Solve a constrained closed interpolation for a specific rotation.
+// Returns [control, aug_bar, rot] or undef if singular.
+//
+// eff_der:  list of n first-derivative specs (undef = unconstrained).
+// eff_curv: list of n curvature specs (undef = unconstrained).
+//           dim=2: signed scalar κ or 2D vector.  dim≥3: curvature vector.
+//
+// Knot construction: standard periodic averaging of N data params,
+// then insert one knot per constraint at the midpoint of the span
+// containing its parameter (largest span first).
+// M control points use standard BOSL2 periodic aliasing:
+// B_j(t) = N_j(t) + (j<p ? N_{j+M}(t) : 0), and likewise for derivatives.
+
+function _closed_constrained_solve(points, p, method, eff_der, eff_curv, rot,
+                                    extra_pts=0, smooth=3) =
+    let(
+        n         = len(points),
+        dim       = len(points[0]),
+        path_len  = path_length(points, closed=true),
+        path_len2 = path_len * path_len,
+
+        // Rotate data, deriv, and curvature lists by the same offset so constraint
+        // associations are preserved after rotation.
+        pts    = select(points,  rot, rot + n - 1),
+        der_r  = is_undef(eff_der)  ? undef : select(eff_der,  rot, rot + n - 1),
+        curv_r = is_undef(eff_curv) ? undef : select(eff_curv, rot, rot + n - 1),
+
+        raw_params = _interp_params(pts, method, closed=true),
+
+        // First-derivative specs: [index, C'(t) vector].
+        // eff_der entries are already dim-projected by _nurbs_interp_closed.
+        der_specs = is_undef(der_r) ? []
+                  : [for (k = [0:1:n-1]) if (!is_undef(der_r[k]))
+                        [k, der_r[k] * path_len]],
+
+        // Curvature specs: [index, C''(t) vector].
+        // eff_curv entries are already dim-projected by _nurbs_interp_closed.
+        // Tangent from explicit derivative (required by caller; validated upstream).
+        curv_specs = is_undef(curv_r) ? []
+                   : [for (k = [0:1:n-1]) if (!is_undef(curv_r[k]))
+                          let(
+                              tang_dir = der_r[k],
+                              v2       = path_len2 * (tang_dir * tang_dir)
+                          )
+                          [k, _curv_to_d2(curv_r[k], tang_dir, dim, v2)]
+                      ],
+
+        n_extra_der  = len(der_specs),
+        n_extra_curv = len(curv_specs),
+        _chk_curv_deg = assert(n_extra_curv == 0 || p >= 2,
+                               "nurbs_interp: curvature constraints require degree >= 2"),
+        n_constraint = n_extra_der + n_extra_curv,
+
+        // Build bar_knots: standard periodic averaging of N data
+        // params, then insert knots for constraints and extra_pts.
+        base_bar       = _avg_knots_periodic(raw_params, p)[0],
+        constraint_idxs = [for (spec = der_specs) spec[0],
+                           for (spec = curv_specs) spec[0]],
+        constraint_ts  = [for (k = constraint_idxs) raw_params[k]],
+        after_constr   = _insert_constraint_knots(base_bar, constraint_ts),
+        // _widest_span_params silently caps the request at the available span count.
+        extra_ts       = extra_pts == 0 ? []
+                       : _widest_span_params(after_constr, extra_pts),
+        aug_bar_raw    = _insert_constraint_knots(after_constr, extra_ts),
+        // M_pre = span count of aug_bar_raw.  Use len()-1 rather than
+        // n+n_constraint+extra_pts so it reflects the actual knots inserted.
+        M_pre          = len(aug_bar_raw) - 1,
+        aug_bar_pre    = _fix_tiny_spans(aug_bar_raw, M_pre),
+
+        // Split any knot span that contains multiple data parameters.
+        // Without this, two data points in the same span produce a
+        // rank-deficient collocation matrix (§9.2.1 Schoenberg-Whitney).
+        occ_splits     = _span_split_params(aug_bar_pre, raw_params),
+        n_occ          = len(occ_splits),
+        M              = M_pre + n_occ,
+        aug_bar        = n_occ == 0 ? aug_bar_pre
+                       : _fix_tiny_spans(
+                             sort([each aug_bar_pre, each occ_splits]),
+                             M),
+        T              = aug_bar[M],
+        U_full         = _full_closed_knots(aug_bar, M, p),
+
+        // Map raw params into active domain [aug_bar[p], aug_bar[p]+T].
+        // Nudge any shifted parameter that lands on or near a knot.
+        raw_shifted = add_scalar(raw_params, aug_bar[p]),
+        eps_knot    = T / M * (p == 2 ? 0.01 : 1e-6),
+        params      = [for (k = [0:1:n-1])
+            let(
+                u     = raw_shifted[k],
+                d_min = min([for (j = [0:1:M + 2*p]) abs(u - U_full[j])])
+            )
+            d_min < eps_knot ? u + eps_knot : u
+        ],
+
+        // Constraint matrix A: interpolation + derivative + curvature rows.
+        N_rows = n + n_constraint,
+
+        // Interpolation rows: aliased basis for M control points
+        interp_rows = [for (k = [0:1:n-1])
+            [for (j = [0:1:M-1])
+                _nip(j, p, params[k], U_full)
+              + (j < p ? _nip(j + M, p, params[k], U_full) : 0)
+            ]
+        ],
+
+        // First-derivative rows: aliased derivative basis
+        deriv_rows = [for (spec = der_specs)
+            let(k = spec[0])
+            [for (j = [0:1:M-1])
+                _dnip(j, p, params[k], U_full)
+              + (j < p ? _dnip(j + M, p, params[k], U_full) : 0)
+            ]
+        ],
+
+        // Second-derivative rows: aliased second-derivative basis
+        curv_rows = [for (spec = curv_specs)
+            let(k = spec[0])
+            [for (j = [0:1:M-1])
+                _d2nip(j, p, params[k], U_full)
+              + (j < p ? _d2nip(j + M, p, params[k], U_full) : 0)
+            ]
+        ],
+
+        A_constr = [each interp_rows, each deriv_rows, each curv_rows],
+        rhs_constr = [each pts,
+                      for (spec = der_specs)  spec[1],
+                      for (spec = curv_specs) spec[1]]
+    )
+    // When M == N_rows (square), try direct solve first.
+    // When M > N_rows (underdetermined from extra_pts or span splits),
+    // use null-space method: exact constraints + minimum-energy smoothing.
+    let(
+        direct = M == N_rows ? linear_solve(A_constr, rhs_constr) : []
+    )
+    direct != []
+    ? [direct, aug_bar, rot]
+    : let(
+        R    = _regularization_matrix(M, smooth, p, U_full, periodic=true),
+        ctrl = _nullspace_solve(R, A_constr, rhs_constr)
+      )
+      is_undef(ctrl) ? undef : [ctrl, aug_bar, rot];
+
+
+
+// Interpolation System Builder (shared by curve & surface)
+
+// Builds the collocation matrix and BOSL2-format knots for a single
+// parameterized direction.  Returns [N_mat, bosl2_knots].
+
+function _build_interp_system(params, p, type, extra_pts=0) =
+    type == "clamped" ? _build_clamped_system(params, p, extra_pts)
+  :                     _build_closed_system(params, p, extra_pts);
+
+function _build_clamped_system(params, p, extra_pts=0) =
+    let(
+        n       = len(params) - 1,
+        int_kn  = _avg_knots_interior(params, p),
+        base_bar = [0, each int_kn, 1]
+    )
+    extra_pts == 0
+    ? let(
+        U_full = _full_clamped_knots(int_kn, p),
+        N_mat  = _collocation_matrix(params, n, p, U_full),
+        knots  = [0, each int_kn, 1]
+      )
+      [N_mat, knots]
+    : let(
+        extra_ts    = _widest_span_params(base_bar, extra_pts),
+        aug_bar_raw = _insert_constraint_knots(base_bar, extra_ts),
+        occ_splits  = _span_split_params(aug_bar_raw, params),
+        n_occ       = len(occ_splits),
+        // Use len(extra_ts), not extra_pts: _widest_span_params silently caps
+        // the request at the number of available spans.
+        M           = n + 1 + len(extra_ts) + n_occ,
+        aug_bar_merged = n_occ == 0 ? aug_bar_raw
+                       : sort([each aug_bar_raw, each occ_splits]),
+        aug_bar     = _fix_tiny_spans(aug_bar_merged, len(aug_bar_merged) - 1),
+        aug_int     = [for (i = [1:1:len(aug_bar)-2]) aug_bar[i]],
+        U_full      = _full_clamped_knots(aug_int, p),
+        // Rectangular (n+1) × M matrix: n+1 data rows, M control columns.
+        // _collocation_matrix uses a single n for both dimensions, so build inline.
+        N_mat       = [for (k = [0:1:n])
+                           [for (j = [0:1:M-1]) _nip(j, p, params[k], U_full)]],
+        knots       = [0, each aug_int, 1]
+      )
+      [N_mat, knots];
+
+function _build_closed_system(params, p, extra_pts=0) =
+    let(
+        n          = len(params),
+        base_bar   = _fix_tiny_spans(_avg_knots_periodic(params, p)[0], n)
+    )
+    extra_pts == 0
+    ? let(
+        U_full     = _full_closed_knots(base_bar, n, p),
+        col_params = add_scalar(params, base_bar[p]),
+        T          = base_bar[n],
+        eps_knot   = T / n * (p == 2 ? 0.01 : 1e-6),
+        col_safe   = [for (k = [0:1:n-1])
+            let(
+                u     = col_params[k],
+                d_min = min([for (j = [0:1:n + 2*p]) abs(u - U_full[j])])
+            )
+            d_min < eps_knot ? u + eps_knot : u
+        ],
+        N_mat      = _collocation_matrix_periodic(col_safe, n, p, U_full)
+      )
+      [N_mat, base_bar]
+    : let(
+        extra_ts    = _widest_span_params(base_bar, extra_pts),
+        aug_bar_raw = _insert_constraint_knots(base_bar, extra_ts),
+        occ_splits  = _span_split_params(aug_bar_raw, params),
+        n_occ       = len(occ_splits),
+        // Use len(extra_ts), not extra_pts: _widest_span_params silently caps
+        // the request at the number of available spans.
+        M           = n + len(extra_ts) + n_occ,
+        aug_bar_merged = n_occ == 0 ? aug_bar_raw
+                       : sort([each aug_bar_raw, each occ_splits]),
+        aug_bar     = _fix_tiny_spans(aug_bar_merged, len(aug_bar_merged) - 1),
+        T           = aug_bar[M],
+        U_full      = _full_closed_knots(aug_bar, M, p),
+        raw_shifted = add_scalar(params, aug_bar[p]),
+        eps_knot    = T / M * (p == 2 ? 0.01 : 1e-6),
+        col_safe    = [for (k = [0:1:n-1])
+            let(
+                u     = raw_shifted[k],
+                d_min = min([for (j = [0:1:M + 2*p]) abs(u - U_full[j])])
+            )
+            d_min < eps_knot ? u + eps_knot : u
+        ],
+        // Rectangular n × M matrix: n data rows, M control columns.
+        // _collocation_matrix_periodic uses a single n for both dimensions, so
+        // build inline. Periodic wrapping folds basis j < p by adding N_{j+M}.
+        N_mat       = [for (k = [0:1:n-1])
+                           [for (j = [0:1:M-1])
+                               _nip(j, p, col_safe[k], U_full)
+                             + (j < p ? _nip(j + M, p, col_safe[k], U_full) : 0)
+                           ]]
+      )
+      [N_mat, aug_bar];
+
+
+// Build a clamped interpolation system with optional start/end first-derivative rows.
+// Extends _build_clamped_system by adding one extra DOF and one extra matrix row
+// for each active boundary (start and/or end).  Used for surface boundary tangents.
+//
+// has_sd / has_ed — whether a start / end derivative constraint is active.
+// extra_pts — number of additional control points (widens the system).
+// Returns [A_matrix, bosl2_knots].  Square when extra_pts==0, rectangular otherwise.
+// Row order: interpolation rows (k=0..n), deriv_start (if any), deriv_end (if any).
+
+function _build_clamped_system_with_derivs(params, p, has_sd, has_ed, extra_pts=0) =
+    let(
+        n       = len(params) - 1,
+        n_extra = (has_sd ? 1 : 0) + (has_ed ? 1 : 0),
+        // Average n+1 data params to get base interior knots, then
+        // insert extra knots for boundary constraints.  Each insertion
+        // bisects the span containing the constraint parameter
+        // (largest span first).  Constraint params 0 and 1 land in
+        // the first and last spans respectively.
+        base_int      = _avg_knots_interior(params, p),
+        base_bar      = [0, each base_int, 1],
+        constraint_ts = [if (has_sd) params[0], if (has_ed) params[n]],
+        after_constr  = _insert_constraint_knots(base_bar, constraint_ts),
+        // Insert extra_pts knots at widest spans.
+        extra_ts      = extra_pts == 0 ? []
+                      : _widest_span_params(after_constr, extra_pts),
+        aug_bar_raw   = extra_pts == 0 ? after_constr
+                      : _insert_constraint_knots(after_constr, extra_ts),
+        occ_splits    = extra_pts == 0 ? []
+                      : _span_split_params(aug_bar_raw, params),
+        n_occ         = len(occ_splits),
+        M             = n + 1 + n_extra + len(extra_ts) + n_occ,
+        aug_bar_merged = n_occ == 0 ? aug_bar_raw
+                       : sort([each aug_bar_raw, each occ_splits]),
+        aug_bar       = _fix_tiny_spans(aug_bar_merged, len(aug_bar_merged) - 1),
+        int_kn      = [for (i = [1:1:len(aug_bar)-2]) aug_bar[i]],
+        U_full      = _full_clamped_knots(int_kn, p),
+        interp_rows = [for (k = [0:1:n])
+                           [for (j = [0:1:M-1]) _nip(j, p, params[k], U_full)]
+                      ],
+        deriv_start = has_sd
+                    ? [[for (j = [0:1:M-1]) _dnip(j, p, params[0], U_full)]]
+                    : [],
+        deriv_end   = has_ed
+                    ? [[for (j = [0:1:M-1]) _dnip(j, p, params[n], U_full)]]
+                    : [],
+        knots       = [0, each int_kn, 1]
+    )
+    [[each interp_rows, each deriv_start, each deriv_end], knots];
+
+
+// Precompute per-segment interpolation systems for edge-aware surface solves.
+// All rows (or columns) share the same averaged parameterization, so the
+// collocation matrices only need to be built once.
+//
+// params    = averaged parameter values for this direction
+// p         = degree
+// edge_idxs = sorted list of interior indices where C0 edges occur
+// has_sd    = if true, first segment gets a start-derivative row
+// has_ed    = if true, last  segment gets an end-derivative row
+//
+// Returns a list of [N_mat, xknots, seg_p, i0, i1, seg_sd, seg_ed]
+// per segment, where seg_sd/seg_ed indicate whether that segment's
+// system includes a derivative row.
+
+function _build_edge_systems(params, p, edge_idxs,
+                              has_sd=false, has_ed=false, extra_pts=0, label="") =
+    let(
+        n          = len(params) - 1,
+        seg_bounds = [0, each edge_idxs, n],
+        n_segs     = len(seg_bounds) - 1,
+
+        // Pre-compute seg_p and available interior knot spans per segment.
+        // For a segment with n_pts data points at degree seg_p, the averaged
+        // interior knot vector has (n_pts-1) - seg_p entries = that many spans.
+        seg_n_pts   = [for (s = [0:1:n_segs-1]) seg_bounds[s+1] - seg_bounds[s] + 1],
+        seg_p_arr   = [for (npts = seg_n_pts) min(p, npts - 1)],
+        avail_spans = [for (i = [0:1:n_segs-1])
+                           max(0, seg_n_pts[i] - 1 - seg_p_arr[i])],
+        total_avail = sum(avail_spans),
+        k_use       = min(extra_pts, total_avail),
+
+        // Emit one diagnostic when extra_pts exceeds the combined span budget.
+        _echo = extra_pts > 0 && extra_pts > total_avail && label != ""
+              ? echo(str("nurbs_interp_surface: extra_pts (", label, "-direction)=",
+                         extra_pts, " exceeds available knot spans across ",
+                         n_segs, " segment(s) (max ", total_avail, " total); ",
+                         "reduced to ", total_avail, "."))
+              : 0,
+
+        // Distribute k_use proportionally to avail_spans, capped per segment.
+        seg_ep = extra_pts == 0 || total_avail == 0 ? repeat(0, n_segs)
+               : [for (s = [0:1:n_segs-1])
+                     avail_spans[s] == 0 ? 0
+                     : min(avail_spans[s],
+                           ceil(k_use * avail_spans[s] / total_avail))]
+    )
+    [for (s = [0:1:n_segs-1])
+        let(
+            i0      = seg_bounds[s],
+            i1      = seg_bounds[s+1],
+            seg_par = [for (k = [i0:1:i1]) params[k]],
+            // Remap to [0,1]
+            t0      = seg_par[0],
+            t1      = last(seg_par),
+            span    = max(t1 - t0, 1e-15),
+            local_p = [for (t = seg_par) (t - t0) / span],
+            seg_p   = seg_p_arr[s],
+            // Derivative extension requires at least seg_p+1 data points
+            // (same minimum as basic interpolation); each derivative row
+            // adds one control point and one equation, keeping the system
+            // square.  Degree-reduced segments with fewer points silently
+            // skip the constraint.
+            n_pts   = seg_n_pts[s],
+            seg_sd  = has_sd && s == 0          && n_pts >= seg_p + 1,
+            seg_ed  = has_ed && s == n_segs - 1 && n_pts >= seg_p + 1,
+            // extra_pts only applies when degree >= 2; silently skip for
+            // degree-reduced (seg_p < 2) segments.
+            cur_ep  = seg_p >= 2 ? seg_ep[s] : 0,
+            sys     = (seg_sd || seg_ed)
+                    ? _build_clamped_system_with_derivs(local_p, seg_p,
+                                                        seg_sd, seg_ed, cur_ep)
+                    : _build_interp_system(local_p, seg_p, "clamped", cur_ep)
+        )
+        [sys[0], sys[1], seg_p, i0, i1, seg_sd, seg_ed]
+    ];
+
+
+// Solve one row (or column) using precomputed edge-aware systems.
+// Each segment is solved independently; short segments are degree-elevated.
+// Results are assembled into a single clamped B-spline via _combine_corner_segs.
+//
+// systems    = list from _build_edge_systems
+// data       = row/column data points (same length as params)
+// params     = averaged parameter values
+// edge_idxs  = edge index list (same as passed to _build_edge_systems)
+// p          = target degree
+// start_deriv  = derivative vector at start of first segment (undef if none)
+// end_deriv    = derivative vector at end of last segment (undef if none)
+
+function _solve_with_edges(systems, data, params, edge_idxs, p,
+                            start_deriv=undef, end_deriv=undef, smooth=3) =
+    let(
+        raw_segments = [for (sys = systems)
+            let(
+                N_mat    = sys[0],
+                knots    = sys[1],
+                i0       = sys[3],
+                i1       = sys[4],
+                seg_p    = sys[2],
+                seg_sd   = sys[5],
+                seg_ed   = sys[6],
+                seg_data = [for (k = [i0:1:i1]) data[k]],
+                rhs      = concat(seg_data,
+                                  seg_sd ? [start_deriv] : [],
+                                  seg_ed ? [end_deriv]   : []),
+                M        = len(N_mat[0]),
+                N_rows   = len(rhs),
+                // When M > N_rows the segment system is underdetermined (extra_pts).
+                // Use null-space method: exact interpolation + minimum bending energy.
+                ctrl = M > N_rows
+                     ? let(
+                         int_kn     = [for (i = [1:1:len(knots)-2]) knots[i]],
+                         U_full     = _full_clamped_knots(int_kn, seg_p),
+                         eff_smooth = (smooth == 3 && seg_p < 2) ? 2 : smooth,
+                         R          = _regularization_matrix(M, eff_smooth, seg_p, U_full)
+                       )
+                       _nullspace_solve(R, N_mat, rhs)
+                     : linear_solve(N_mat, rhs)
+            )
+            assert(ctrl != [] && !is_undef(ctrl),
+                   str("nurbs_interp_surface: singular edge-segment system for rows/cols ",
+                       i0, "-", i1, " (", i1-i0+1, " points, degree ", seg_p,
+                       seg_sd ? ", start deriv" : "",
+                       seg_ed ? ", end deriv" : "", ")"))
+            [ctrl, knots, seg_p]
+        ],
+        // Degree-elevate short segments to full degree p.
+        segments = [for (seg = raw_segments)
+            seg[2] == p ? seg
+            : let(elev = nurbs_elevate_degree(seg[0], seg[2], seg[1],
+                              type="clamped", times=p - seg[2]))
+              [elev[2], elev[3], p]
+        ]
+    )
+    _combine_corner_segs(segments, params, edge_idxs, p);
 
 
 
