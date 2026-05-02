@@ -722,7 +722,7 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //   path = nurbs_curve(nurbs_interp(data, 3, closed = true, method = "centripetal", corners = [0,4]));
 //   right(75) stroke(path, closed = true);
 //
-// Example(2D,NoAxes,Med,VPT=[37.5,0,0],VPD=275): For better shape control we can add derivitive and curvature control to data points to a closed NURBS. 
+// Example(2D,NoAxes,Med,VPT=[37.5,0,0],VPD=275): For better shape control we can add derivitive constraints and curvature control at data points 1 and 6 
 //   data = [[0,10], [25,20], [30,0], [20,-15], [0,-30], [-20,-15], [-30,0], [-25,20]];
 //   debug_nurbs_interp(data, 3, closed = true, method = "centripetal", 
 //      deriv = [NAN,[1,-1]*0.8,undef,undef,NAN,undef,undef,[1,1]*0.8],
@@ -730,8 +730,18 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //   path = nurbs_curve(nurbs_interp(data, 3, closed = true, method = "centripetal", 
 //      deriv = [NAN,[1,-1]*0.8,undef,undef,NAN,undef,undef,[1,1]*0.8],
 //      curvature = [undef,-0.06,undef,undef,undef,undef,undef,-0.06]));
-//  right(75) stroke(path, closed = true);
+//   right(75) stroke(path, closed = true);
 //
+// Example(2D,NoAxes,Med,VPT=[37.5,0,0],VPD=275): Finer control of derivitive direction by specifying the angle.
+//   data = [[0,10], [25,20], [30,0], [20,-15], [0,-30], [-20,-15], [-30,0], [-25,20]];
+//   debug_nurbs_interp(data, 3, closed = true, method = "centripetal", 
+//      deriv = [NAN,polar_to_xy(1.1313,-40),undef,undef,NAN,undef,undef,polar_to_xy(1.1313,40)],
+//      curvature = [undef,-0.06,undef,undef,undef,undef,undef,-0.06]);
+//   path3 = nurbs_curve(nurbs_interp(data, 3, closed = true, method = "centripetal", 
+//      deriv = [NAN,polar_to_xy(1.1313,-40),undef,undef,NAN,undef,undef,polar_to_xy(1.1313,40)],
+//      curvature = [undef,-0.06,undef,undef,undef,undef,undef,-0.06]));
+//   right(75) stroke(path3, closed = true);
+
 
  
 function nurbs_interp(points, degree, method="centripetal", closed=false,
