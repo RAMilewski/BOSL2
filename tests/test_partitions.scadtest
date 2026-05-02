@@ -111,14 +111,42 @@ include <../std.scad>
 
 module test_ptn_sect() {
     // Numeric type: returns a straight segment
-    seg = ptn_sect(5);
+    seg = _ptn_sect(5);
     assert(is_path(seg, 2));
     assert_approx(seg[0], [0,0]);
     assert_approx(seg[1], [5,0]);
 
     // String type: "flat"
-    flat = ptn_sect("flat");
+    flat = _ptn_sect("flat");
     assert(is_path(flat, 2));
+
+    // pinch:N% is identical to bare pinch:N
+    p50    = _ptn_sect("square pinch:50");
+    p50pct = _ptn_sect("square pinch:50%");
+    assert(len(p50) == len(p50pct));
+    for (i = idx(p50)) assert_approx(p50[i], p50pct[i]);
+
+    // pinch:0deg (straight walls) equals pinch:100 (no change)
+    p0deg  = _ptn_sect("square pinch:0deg");
+    p100   = _ptn_sect("square pinch:100");
+    assert(len(p0deg) == len(p100));
+    for (i = idx(p0deg)) assert_approx(p0deg[i], p100[i]);
+
+    // pinch:20deg narrows the top
+    pdeg = _ptn_sect("square pinch:20deg");
+    top_y = max([for (p = pdeg) p.y]);
+    top_xs  = [for (p = pdeg) if (approx(p.y, top_y)) p.x];
+    bot_xs  = [for (p = pdeg) if (approx(p.y, 0))     p.x];
+    assert(max(top_xs) - min(top_xs) < max(bot_xs) - min(bot_xs),
+           "pinch:20deg should narrow the top");
+
+    // pinch:-9deg (negative angle) flares the top wider
+    pndeg = _ptn_sect("square pinch:-9deg");
+    top_y2  = max([for (p = pndeg) p.y]);
+    top_xs2 = [for (p = pndeg) if (approx(p.y, top_y2)) p.x];
+    bot_xs2 = [for (p = pndeg) if (approx(p.y, 0))      p.x];
+    assert(max(top_xs2) - min(top_xs2) > max(bot_xs2) - min(bot_xs2),
+           "pinch:-9deg should widen the top");
 }
 test_ptn_sect();
 '''
