@@ -710,8 +710,30 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //       width=0.3);
 //   color("black") move_copies(data) circle(r=0.25, $fn=16);
 //
+// Example(2D,NoAxes,Med,VPT=[37.5,0,0],VPD=275): We can generate a heart shape with a clamped NURBS where the first and last data points are co-incident, and we insert a corner at data point 4.
+//   data = [[0,10], [25,20], [30,0], [20,-15], [0,-30], [-20,-15], [-30,0], [-25,20], [0,10]];
+//   debug_nurbs_interp(data, 3, closed = false, method = "centripetal", corners=[4]);
+//   path = nurbs_curve(nurbs_interp(data, 3, closed = false, method = "centripetal", corners=[4]));
+//   right(75) stroke(path, closed = true);
+//
+// Example(2D,NoAxes,Med,VPT=[37.5,0,0],VPD=275): The same data but with a closed NURBS. Note that we do not repeat the starting point for a closed NURBS but instead insert a corner there.
+//   data = [[0,10], [25,20], [30,0], [20,-15], [0,-30], [-20,-15], [-30,0], [-25,20]];
+//   debug_nurbs_interp(data, 3, closed = true, method = "centripetal", corners=[0,4]);
+//   path = nurbs_curve(nurbs_interp(data, 3, closed = true, method = "centripetal", corners = [0,4]));
+//   right(75) stroke(path, closed = true);
+//
+// Example(2D,NoAxes,Med,VPT=[37.5,0,0],VPD=275): For better shape control we can add derivitive and curvature control to data points to a closed NURBS. 
+//   data = [[0,10], [25,20], [30,0], [20,-15], [0,-30], [-20,-15], [-30,0], [-25,20]];
+//   debug_nurbs_interp(data, 3, closed = true, method = "centripetal", 
+//      deriv = [NAN,[1,-1]*0.8,undef,undef,NAN,undef,undef,[1,1]*0.8],
+//      curvature = [undef,-0.06,undef,undef,undef,undef,undef,-0.06]);
+//   path = nurbs_curve(nurbs_interp(data, 3, closed = true, method = "centripetal", 
+//      deriv = [NAN,[1,-1]*0.8,undef,undef,NAN,undef,undef,[1,1]*0.8],
+//      curvature = [undef,-0.06,undef,undef,undef,undef,undef,-0.06]));
+//  right(75) stroke(path, closed = true);
 //
 
+ 
 function nurbs_interp(points, degree, method="centripetal", closed=false,
                       deriv=undef, start_deriv=undef, end_deriv=undef,
                       curvature=undef, start_curvature=undef, end_curvature=undef,
