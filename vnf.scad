@@ -332,8 +332,8 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     move([50,0,-20]) rot($vpr) color("black")
-//       text(txt, size=5, halign="center", valign="top");
+//     rot($vpr) move([50,-35]) color("black")
+//       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
 //   show_triangulation(fn, "default", steps=4);
@@ -346,8 +346,8 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     move([50,0,-20]) rot($vpr) color("black")
-//       text(txt, size=5, halign="center", valign="top");
+//     rot($vpr) move([50,-35]) color("black")
+//       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
 //   show_triangulation(fn, "alt", steps=4);
@@ -360,8 +360,8 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     move([50,0,-20]) rot($vpr) color("black")
-//       text(txt, size=5, halign="center", valign="top");
+//     move([50,0,-25]) rot($vpr) color("black")
+//       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
 //   show_triangulation(fn, "flip1", steps=4);
@@ -374,8 +374,8 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     move([50,0,-20]) rot($vpr) color("black")
-//       text(txt, size=5, halign="center", valign="top");
+//     rot($vpr) move([50,-35]) color("black")
+//       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
 //   show_triangulation(fn, "flip2", steps=4);
@@ -388,8 +388,8 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     move([50,0,-20]) rot($vpr) color("black")
-//       text(txt, size=5, halign="center", valign="top");
+//     rot($vpr) move([50,-35]) color("black")
+//       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
 //   show_triangulation(fn, "quad", steps=4);
@@ -402,8 +402,8 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     move([50,0,-20]) rot($vpr) color("black")
-//       text(txt, size=5, halign="center", valign="top");
+//     rot($vpr) move([50,-35]) color("black")
+//       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
 //   show_triangulation(fn, "quincunx", steps=4);
@@ -416,8 +416,8 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     move([50,0,-20]) rot($vpr) color("black")
-//       text(txt, size=5, halign="center", valign="top");
+//     rot($vpr) move([50,-35]) color("black")
+//       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
 //   show_triangulation(fn, "convex", steps=4);
@@ -430,8 +430,8 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     move([50,0,-20]) rot($vpr) color("black")
-//       text(txt, size=5, halign="center", valign="top");
+//     rot($vpr) move([50,-35]) color("black")
+//       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
 //   show_triangulation(fn, "concave", steps=4);
@@ -444,8 +444,8 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     move([50,0,-20]) rot($vpr) color("black")
-//       text(txt, size=5, halign="center", valign="top");
+//     rot($vpr) move([50,-35]) color("black")
+//       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
 //   show_triangulation(fn, "concave", steps=4);
@@ -458,8 +458,8 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     move([50,0,-20]) rot($vpr) color("black")
-//       text(txt, size=5, halign="center", valign="top");
+//     rot($vpr) move([50,-35]) color("black")
+//       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
 //   show_triangulation(fn, "concave", steps=4);
