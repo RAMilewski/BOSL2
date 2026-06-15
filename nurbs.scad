@@ -789,6 +789,28 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //      }
 //   }
 //
+// Example(2D,NoAxes): Keyhole Shape: Simply interpolating a NURBS through the data points yields disappointing results.
+//   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
+//   debug_nurbs_interp(data,3, method="centripetal");
+//
+// Example(2D,NoAxes,VPT=[3,15,0],VPD=130): Keyhole Shape: Adding derivative constraints causes unwanted oscillation.
+//   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
+//      debug_nurbs_interp(data,3, method="centripetal",
+//      deriv=[undef,NAN,UP,RIGHT*1.3,DOWN,NAN,NAN,undef]);
+//
+// Example(2D,NoAxes): Keyhole Shape: Adding extra points calms oscillations.
+//   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
+//   debug_nurbs_interp(data,3, method="centripetal",
+//      deriv=[undef,NAN,UP,RIGHT*1.3,DOWN,NAN,NAN,undef],
+//      extra_pts = 1, smooth = 3);
+//
+// Example(2D,NoAxes): Keyhole Shape: Constrained curvature at point 3 improves the shape.
+//   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
+//   debug_nurbs_interp(data,3, method="centripetal",
+//      deriv=[undef,NAN,UP,RIGHT*1.3,DOWN,NAN,NAN,undef],
+//      curvature=[undef,undef,undef,-.1,undef,undef,undef,undef],
+//      extra_pts = 1, smooth = 3);
+//
 // Example(2D,NoAxes,Big): Unconstrained NURBS through the same data points vary depending on the paramaterization method chosen
 //   data = [[0,0], [20,30], [35,120], [50,30], [70,0]];
 //   method = ["length", "centripetal", "dynamic", "foley", "fang"];
@@ -990,28 +1012,6 @@ function nurbs_interp(points, degree, method="centripetal", closed=false,
 //   show_deriv      = Show derivative-constraint arrows.  Default: `true`
 //   show_curvature  = Show curvature-constraint circles / disks.  Default: `true`
 //
-
-// Example(2D,NoAxes): Keyhole Shape: Simply interpolating a NURBS through the data points yields disappointing results.
-//   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
-//   debug_nurbs_interp(data,3, method="centripetal");
-//
-// Example(2D,NoAxes,VPT=[3,15,0],VPD=130): Keyhole Shape: Adding derivative constraints causes unwanted oscillation.
-//   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
-//      debug_nurbs_interp(data,3, method="centripetal",
-//      deriv=[undef,NAN,UP,RIGHT*1.3,DOWN,NAN,NAN,undef]);
-//
-// Example(2D,NoAxes): Keyhole Shape: Adding extra points calms oscillations.
-//   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
-//   debug_nurbs_interp(data,3, method="centripetal",
-//      deriv=[undef,NAN,UP,RIGHT*1.3,DOWN,NAN,NAN,undef],
-//      extra_pts = 1, smooth = 3);
-//
-// Example(2D,NoAxes): Keyhole Shape: Constrained curvature at point 3 improves the shape.
-//   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
-//   debug_nurbs_interp(data,3, method="centripetal",
-//      deriv=[undef,NAN,UP,RIGHT*1.3,DOWN,NAN,NAN,undef],
-//      curvature=[undef,undef,undef,-.1,undef,undef,undef,undef],
-//      extra_pts = 1, smooth = 3);
 
 module debug_nurbs_interp(points, degree, splinesteps=16, method="centripetal",
                           closed=false, deriv=undef,
