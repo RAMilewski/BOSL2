@@ -1730,26 +1730,15 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //   nurbs_interp_surface(surface,3, row_edges = 3);
 //
 //
-// Example(3D): Tube - Surface closed around the column direction (the rings), clamped along rows (the axis).  
-//   r = 20;
-//   data = [for (u = [0:15:60])
-//       [for (i = [0:1:5])
-//           let(a = i * 360/6)
-//           [r*cos(a), r*sin(a), u]]
-//   ];
-//   nurbs_interp_surface(data, 3, splinesteps=8, col_wrap=true);
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): Rotated star cross section surface closed in one direction.
+//   surface = [ for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)), ];
+//   nurbs_interp_surface(surface, 3, col_wrap = true);
 // 
-//// Example(3D): We can close the ends of mixed surfaces such as our tube, using caps.  
-//   r = 20;
-//   data = [for (u = [0:15:60])
-//       [for (i = [0:1:5])
-//           let(a = i * 360/6)
-//           [r*cos(a), r*sin(a), u]]
-//   ];
-//   nurbs_interp_surface(data, 3, splinesteps=8, col_wrap=true, caps = true);
-// 
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): We can close the ends of mixed surfaces using caps.  
+//   surface = [ for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)), ];
+//   nurbs_interp_surface(surface, 3, col_wrap = true, caps = true);
 //
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): Rotated star cross section surface closed in one direction.  Degenerate end rows close the shape in the other direction.
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): Instead of caps we can use degenerate end rows close the shape.
 //   surface = [ repeat([0,0,-15],14),
 //      for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)),
 //      repeat([0,0,5*15],14)
