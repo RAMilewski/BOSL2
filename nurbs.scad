@@ -1035,7 +1035,7 @@ module debug_nurbs_interp(points, degree, splinesteps=16, method="centripetal",
     ds          = default(data_size, width);
     sz          = default(size, 3 * width);
     ctrl        = result[2];
-    arrow_scale = path_length(points) / np;
+    arrow_scale = (path_length(points)/2) / np;
 
     // Helpers project BOSL2 direction constants and pad dimensions automatically.
     eff_der  = _merge_deriv_list(np-1, deriv, dim=dim, start_deriv=start_deriv, end_deriv=end_deriv);
