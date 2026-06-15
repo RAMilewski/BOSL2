@@ -680,133 +680,105 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //     nurbs_curve(nurbs_interp(data, 3, start_deriv=[1,0], end_deriv=[1,0])), width=0.3);
 //   color("black") move_copies(data) circle(r=0.75, $fn=16);
 //
-// Example(2D,Huge,NoAxes,VPT=[55,50,0],VPR=[0,0,0],VPD=600): Controlling the start and end of an otherwise unconstrained NURBS curve using derivitives.
-//   data = [[0,0], [20,30], [30,90], [36,111],[50,25], [80,0]];
-//   xdistribute(90){
-//      union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1);
-//          fwd(15)text("unconstrained",size=6);
-//      }
-//      union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1,
-//                        start_deriv=RIGHT);
-//          fwd(15)text("start=RIGHT",size=6);
-//      }
-//      union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1,
-//                      start_deriv=2*RIGHT,end_deriv=RIGHT);
-//          fwd(15)text("start=[2,0] end=[1,0]",size=6);
-//      }
-//   }
+// Example(2D,Med): An unconstrained NURBS curve.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//      debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1);
 //
-// Example(2D,Huge,NoAxes,VPT=[45,50,0],VPR=[0,0,0],VPD=600): Controlling the shape with derivatives and corners
-//   data = [[0,0], [20,30], [30,90], [36,111],[50,25], [80,0]];
-//   xdistribute(110){
-//      back(20) union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1,
-//             deriv=[2*RIGHT,[0,1],undef,undef,undef,RIGHT]
-//          );
-//          fwd(15)text("derivs at 0, 1, 5",size=6);
-//      }
-//      union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1,
-//             deriv=[undef,[0,1],undef,undef,RIGHT,undef]
-//          );
-//          fwd(15)text("derivs at pts 1, 4",size=6);
-//      }
-//      fwd(20) union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1,
-//             deriv=[undef,[0,1],undef,undef,NAN,undef]
-//          );
-//          fwd(15)text("corner and pt 1 deriv",size=6);
-//      }
-//   }
+// Example(2D,Med): Controlling the start using derivitives. Note the effect of the starting derivative on the end of the curve.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1,
+//      start_deriv=RIGHT);
 //
-// Example(2D,Huge,NoAxes,VPT=[70,50,0],VPR=[0,0,0],VPD=725): Specifying the curvature at select points.  In the middle example shows continuous curvature joins to arcs at each end.
-//   data = [[0,0], [20,30], [30,90], [36,111],[50,25], [80,0]];
-//   xdistribute(110){
-//      back(30) union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1,
-//             start_deriv=RIGHT,end_deriv=RIGHT, start_curvature=0,end_curvature=0
-//          );
-//          fwd(15)text("ends curvature=0",size=6);
-//      }
-//      union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1,
-//             start_deriv=RIGHT,end_deriv=RIGHT, start_curvature=1/10*unit([1000,1]),end_curvature=1/5
-//          );
-//          color("lime") {
-//              stroke(arc(angle=[180,270], cp=[0,10],r=10));
-//              stroke(arc(angle=[270,360], cp=last(data)+[0,5], r=5,$fn=32));
-//          }
-//          fwd(15)text("ends curvature>0",size=6);
-//      }
-//      fwd(30) union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1,
-//             deriv=[undef,[0,1],undef,[1,0],undef,undef],
-//             curvature=[undef,-1/10,undef,0,undef,undef]
-//          );
-//          fwd(15)text("curvature at points 1 and 3",size=6);
-//      }
-//   }
+// Example(2D,Med): Increasing the start derivative and adding an end derivitive.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1,
+//      start_deriv=2*RIGHT,end_deriv=RIGHT);
 //
-// Example(2D,Huge,NoAxes,VPT=[45,50,0],VPR=[0,0,0],VPD=700): Closed NURBS curves
-//   data = [[0,0], [20,30], [30,90], [36,111],[50,25], [80,0]];
-//   xdistribute(120){
-//     union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1, closed = true
-//          );
-//          fwd(22)text("unconstrained",size=6);
-//      }
-//      union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1, closed = true,
-//                              deriv=[[0,1]/4, undef, undef, undef, undef, [0,-1]/3]
-//          );
-//          fwd(15)text("deriv at pts 0 and 5",size=6);
-//      }
-//      union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1, closed = true,
-//                             deriv=[undef,undef,undef,[1,0],undef,undef]
-//          );
-//          fwd(15)text("deriv at point 4",size=6);
-//      }
-//   }
+// Example(2D,Med): Adding an additional derivitive at data point 1.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1,
+//      deriv=[2*RIGHT,[0,1],undef,undef,undef,RIGHT]);
 //
-// Example(2D,Huge,NoAxes,VPT=[45,50,0],VPR=[0,0,0],VPD=500): Closed NURBS curves with corners
-//   data = [[0,0], [20,30], [30,90], [36,111],[50,25], [80,0]];
-//   xdistribute(120){
-//     union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1, closed = true,
-//                            deriv=[undef,[0,1],undef,undef,NAN,undef]
-//          );
-//          fwd(20)text("pt 1 deriv and pt 4 corner",size=6);
+// Example(2D,Med): Uncontrolled ends, but derivitive control of the data points adjacent to the ends.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1,
+//      deriv=[undef,[0,1],undef,undef,RIGHT,undef]);
+//
+// Example(2D,Med): Controlling shape with a derivative and a corner.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1,
+//      deriv=[undef,[0,1],undef,undef,NAN,undef]);
+//
+// Example(2D,Med):  Zero curvature at the start and end.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1,
+//      start_deriv=RIGHT,end_deriv=RIGHT, start_curvature=0,end_curvature=0);
+//
+// Example(2D,Med): Adjusting the curvature at the end points to match the attached arcs.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1,
+//      start_deriv=RIGHT,end_deriv=RIGHT, start_curvature=1/10*unit([1000,1]),end_curvature=1/5
+//      );
+//      color("lime") {
+//          stroke(arc(angle=[180,270], cp=[0,10],r=10));
+//          stroke(arc(angle=[270,360], cp=last(data)+[0,5], r=5,$fn=32));
 //      }
-//      union(){
-//          debug_nurbs_interp(data,3, splinesteps=32, data_size=1, closed = true,
-//                              deriv=[undef,NAN,undef,undef,NAN,undef]
-//          );
-//          fwd(20)text("corners at pts 1 and 4", size=6);
-//      }
-//   }
+//
+// Example(2D,Med): Curvature control at point 1 with derivative control at point 1 and 3.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1,
+//      deriv=[undef,[0,1],undef,[1,0],undef,undef],
+//      curvature=[undef,-1/10,undef,0,undef,undef]);
+//
+// Example(2D,Med): Taming the extremes by adding extra points.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1,
+//      deriv=[undef,[0,1],undef,[1,0],undef,undef],
+//      curvature=[undef,-1/10,undef,0,undef,undef],
+//      extra_pts=2);
+//
+// Example(2D,Med):  The same data but for an uncontrolled closed NURBS curve.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1, closed = true);
+//
+// Example(2D,Med):  Addng extra points to control the oscillation
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1, closed = true,
+//      extra_pts = 2);
+//
+// Example(2D,Med):  Small derivatives at the first and last data points also calm the curve.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];        
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1, closed = true,
+//      deriv=[[0,1]/4, undef, undef, undef, undef, [0,-1]/3]);
+//
+// Example(2D,Med): A closed NURBS curve with a derivative at pt 1, and a corner at pt 4.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1, closed = true,
+//      deriv=[undef,[0,1],undef,undef,NAN,undef]);
+//
+// Example(2D,Med): The same closed curve with corners at points 1 and 4.
+//   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
+//   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1, closed = true,
+//      deriv=[undef,NAN,undef,undef,NAN,undef]);
 //
 // Example(2D,NoAxes): Keyhole Shape: Simply interpolating a NURBS through the data points yields disappointing results.
 //   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
-//   debug_nurbs_interp(data,3, method="centripetal");
+//   debug_nurbs_interp(data, degree=3, method="centripetal");
 //
 // Example(2D,NoAxes,VPT=[3,15,0],VPD=130): Keyhole Shape: Adding derivative constraints causes unwanted oscillation.
 //   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
-//      debug_nurbs_interp(data,3, method="centripetal",
+//      debug_nurbs_interp(data, degree=3, method="centripetal",
 //      deriv=[undef,NAN,UP,RIGHT*1.3,DOWN,NAN,NAN,undef]);
 //
 // Example(2D,NoAxes): Keyhole Shape: Adding extra points calms oscillations.
 //   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
-//   debug_nurbs_interp(data,3, method="centripetal",
+//   debug_nurbs_interp(data, degree=3, method="centripetal",
 //      deriv=[undef,NAN,UP,RIGHT*1.3,DOWN,NAN,NAN,undef],
 //      extra_pts = 1, smooth = 3);
 //
 // Example(2D,NoAxes): Keyhole Shape: Constrained curvature at point 3 improves the shape.
 //   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
-//   debug_nurbs_interp(data,3, method="centripetal",
+//   debug_nurbs_interp(data, degree=3, method="centripetal",
 //      deriv=[undef,NAN,UP,RIGHT*1.3,DOWN,NAN,NAN,undef],
 //      curvature=[undef,undef,undef,-.1,undef,undef,undef,undef],
 //      extra_pts = 1, smooth = 3);
