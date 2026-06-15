@@ -2429,15 +2429,19 @@ module rounded_prism(bottom, top, joint_bot=0, joint_top=0, joint_sides=0, k_bot
   dummy1 = assert(in_list(atype, ["intersect","hull","surf_intersect","surf_hull","prismoid"]),
                   "Anchor type must be one of: \"hull\", \"intersect\", \"surf_hull\", \"surf_intersect\" or \"prismoid\"")
            assert(atype!="prismoid" || len(bottom)==4, "Anchor type \"prismoid\" requires that len(bottom)=4");
+
+  top_path = force_path(top,"top");
+  bot_path = force_path(bottom,"bottom");
   
-  result = rounded_prism(bottom=bottom, top=top, joint_bot=joint_bot, joint_top=joint_top, joint_sides=joint_sides,
+  result = rounded_prism(bottom=bot_path, top=top_path, joint_bot=joint_bot, joint_top=joint_top, joint_sides=joint_sides,
                          k_bot=k_bot, k_top=k_top, k_sides=k_sides, k=k, splinesteps=splinesteps, h=h, length=length, height=height, l=l,
                          debug=debug, _full_info=true);
   height = one_defined([l,h,height,length], "l,h,height,length", dflt=undef);
-  top = is_undef(top) ? path3d(bottom,height/2) :
-        len(top[0])==2 ? path3d(top,height/2) :
-        top;
-  bottom = len(bottom[0])==2 ? path3d(bottom,-height/2) : bottom;
+  top = is_undef(top_path) ? path3d(bot_path,height/2) :
+        len(top_path[0])==2 ? path3d(top_path,height/2) :
+        top_path;
+  bottom = len(bot_path[0])==2 ? path3d(bot_path,-height/2) : bot_path;
+  
   unrounded = vnf_vertex_array([top,bottom],caps=true, col_wrap=true,reverse=true);
 
   vnf = result[1];
