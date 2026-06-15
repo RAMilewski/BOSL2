@@ -1763,12 +1763,12 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //   ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true, normal1 = DOWN*4, normal2 = UP*2);
 //   
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): Controlling end shape with normals.
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): A more extreme example of controlling end shape with normals.
 //   surface = [ repeat([0,0,-15],14),
 //      for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)),
 //      repeat([0,0,5*15],14)
 //   ];
-//   nurbs_interp_surface(surface, 3, col_wrap = true, normal1 = DOWN*4, normal2 = UP*2+RIGHT*4);
+//   nurbs_interp_surface(surface, 3, col_wrap = true, normal1 = DOWN*4, normal2 = 5*UP+2*RIGHT);
 //   
 // Example(3D): EGG  Smooth parametric ovoid.  ~103 long, ~82 wide. 9 rings × 8 angles
 //   egg = [for (i = [0:8])
