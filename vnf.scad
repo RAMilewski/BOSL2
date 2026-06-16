@@ -49,8 +49,9 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //   * "alt" &mdash; uniform subdivision in the other (alternate) direction
 //   * "flip1" &mdash; arbitrary division that alternates the direction adjacent pairs of quadrilaterals.
 //   * "flip2" &mdash; the alternating division that is the opposite of "flip1". 
-//   * "min_edge" &mdash; subdivide each quadrilateral on its shorter edge, so the division may not be uniform across the shape
-//   * "min_area" &mdash; creates the triangulation with the minimal area.
+//   * "max_edge" &mdash; subdivide each quadrilateral on its longer edge, so the division may not be uniform across the shape
+//   * "min_edge" &mdash; subdivide each quadrilateral on its shorter edge.  The opposite of "max_edge".
+//   * "min_area" &mdash; creates the triangulation with the minimal area.  This is often, but not always the same as "min_edge"
 //   * "quincunx" &mdash; adds a vertex in the center of each quadrilateral and creates four triangles
 //   * "convex" &mdash; choose the locally convex division
 //   * "concave" &mdash; choose the locally concave division
@@ -332,7 +333,7 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     rot($vpr) move([50,-35]) color("black")
+//     rot($vpr) move([70,-30]) color("black")
 //       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
@@ -346,7 +347,7 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     rot($vpr) move([50,-35]) color("black")
+//     rot($vpr) move([70,-30]) color("black")
 //       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
@@ -360,7 +361,7 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     move([50,0,-25]) rot($vpr) color("black")
+//     rot($vpr) move([70,-30]) color("black")
 //       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
@@ -374,7 +375,7 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     rot($vpr) move([50,-35]) color("black")
+//     rot($vpr) move([70,-30]) color("black")
 //       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
@@ -388,7 +389,7 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     rot($vpr) move([50,-35]) color("black")
+//     rot($vpr) move([70,-30]) color("black")
 //       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
@@ -402,7 +403,7 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     rot($vpr) move([50,-35]) color("black")
+//     rot($vpr) move([70,-30]) color("black")
 //       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
@@ -416,7 +417,7 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     rot($vpr) move([50,-35]) color("black")
+//     rot($vpr) move([70,-30]) color("black")
 //       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
@@ -430,12 +431,12 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     rot($vpr) move([50,-35]) color("black")
+//     rot($vpr) move([70,-30]) color("black")
 //       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
 //   show_triangulation(fn, "concave", steps=4);
-// Example(3D,VPT=[50,44,-4.5],VPD=400): Triangulating using `style="min_edge"`.  This triangulates in a way that minimizes face edge lengths.
+// Example(3D,VPT=[50,44,-4.5],VPD=400): Triangulating using `style="max_edge"`.  This selects the longer diagonal.
 //   module show_triangulation(fn, style, steps) {
 //     pts = [for(u=[0:100/steps:100]) [for(v=[0:100/steps:100]) fn(u,v)]];
 //     vnf = vnf_vertex_array(pts, style=style);
@@ -444,11 +445,25 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     rot($vpr) move([50,-35]) color("black")
+//     rot($vpr) move([70,-30]) color("black")
 //       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
-//   show_triangulation(fn, "concave", steps=4);
+//   show_triangulation(fn, "max_edge", steps=4);
+// Example(3D,VPT=[50,44,-4.5],VPD=400): Triangulating using `style="min_edge"`.  This selects the shorter diagonal.
+//   module show_triangulation(fn, style, steps) {
+//     pts = [for(u=[0:100/steps:100]) [for(v=[0:100/steps:100]) fn(u,v)]];
+//     vnf = vnf_vertex_array(pts, style=style);
+//     grid_vnf = vnf_vertex_array(pts, style="quad");
+//     color("#ccf") vnf_polyhedron(vnf);
+//     color("#0dd") vnf_wireframe(vnf, width=0.4);
+//     color("black") vnf_wireframe(grid_vnf, width=0.5);
+//     txt = str("style = ", style);
+//     rot($vpr) move([70,-30]) color("black")
+//       text(txt, size=10, halign="center", valign="top");
+//   }
+//   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
+//   show_triangulation(fn, "min_edge", steps=4);
 // Example(3D,VPT=[50,44,-4.5],VPD=400): Triangulating using `style="min_area"`.  This triangulates in a way that minimizes face areas.
 //   module show_triangulation(fn, style, steps) {
 //     pts = [for(u=[0:100/steps:100]) [for(v=[0:100/steps:100]) fn(u,v)]];
@@ -458,11 +473,11 @@ EMPTY_VNF = [[],[]];  // The standard empty VNF with no vertices or faces.
 //     color("#0dd") vnf_wireframe(vnf, width=0.4);
 //     color("black") vnf_wireframe(grid_vnf, width=0.5);
 //     txt = str("style = ", style);
-//     rot($vpr) move([50,-35]) color("black")
+//     rot($vpr) move([70,-30]) color("black")
 //       text(txt, size=10, halign="center", valign="top");
 //   }
 //   fn = function(u,v) [u, v, 16*sin(u*1.8)*-cos(v*1.8)];
-//   show_triangulation(fn, "concave", steps=4);
+//   show_triangulation(fn, "min_area", steps=4);
 
 module vnf_vertex_array(
     points,
@@ -496,7 +511,7 @@ function vnf_vertex_array(
     texture, tex_reps, tex_size, tex_samples, tex_inset=false, tex_rot=0, tex_scaling="default",
     tex_depth=1, tex_extra, tex_skip, sidecaps,sidecap1,sidecap2, normals
 ) =
-    assert(in_list(style,["default","alt","quincunx", "convex","concave", "min_edge","min_area","flip1","flip2","quad"]))
+    assert(in_list(style,["default","alt","quincunx", "convex","concave", "max_edge", "min_edge","min_area","flip1","flip2","quad"]))
     assert(is_matrix(points[0], n=3),"\nPoint array has the wrong shape or points are not 3d.")
     assert(is_consistent(points), "\nNon-rectangular or invalid point array (vnf_tri_array() may work).")
     assert(is_bool(triangulate))
@@ -555,6 +570,15 @@ function vnf_vertex_array(
                                  : [[i1,i3,i2],[i1,i4,i3]]
                           )
                           minarea_edge
+                      : style=="max_edge"?
+                          let(
+                               d42=norm(pts[i4]-pts[i2]),
+                               d13=norm(pts[i1]-pts[i3]),
+                               longedge = d42>d13-_EPSILON
+                                 ? [[i1,i4,i2],[i2,i4,i3]]
+                                 : [[i1,i3,i2],[i1,i4,i3]]
+                          )
+                          longedge
                       : style=="min_edge"?
                           let(
                                d42=norm(pts[i4]-pts[i2]),
