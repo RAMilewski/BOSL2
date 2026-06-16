@@ -1738,14 +1738,14 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //   surface = [ for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)), ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true, caps = true);
 //
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): Instead of caps we can use degenerate end rows close the shape.
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): Instead of caps we can use degenerate end rows to close the shape.
 //   surface = [ repeat([0,0,-15],14),
 //      for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)),
 //      repeat([0,0,5*15],14)
 //   ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true);
 //   
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): Controlling end shape with normals.
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): Controlling the end shape with normals.
 //   surface = [ repeat([0,0,-15],14),
 //      for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)),
 //      repeat([0,0,5*15],14)
@@ -1758,19 +1758,12 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //      repeat([0,0,5*15],14)
 //   ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true, normal1 = DOWN*4, normal2 = 5*UP+2*RIGHT);
-//   
-// Example(3D): EGG  Smooth parametric ovoid.  ~103 long, ~82 wide. 9 rings × 8 angles
-//   egg = [for (i = [0:8])
-//      let(phi = i * 180/8,
-//      r   = 40 * sin(phi) * (1 - 0.25*cos(phi)),
-//      z   = -52 * cos(phi))
-//      [for (j = [0:7])
-//      let(theta = j * 45)
-//      [r*cos(theta), r*sin(theta), z] 
-//      ]
+//
+// Example(3D,Med,VPR=[60,0,45],VPT=[0,0,10],VPD = 150): Setting both col_wrap and row_wrap to true, yields a torus.
+//   surface = [
+//     for(i=[0:8]) zrot(i*15,path3d(star(or=25,ir=22, n=11),i*2)),
 //   ];
-//   nurbs_interp_surface(egg, 3, col_wrap = true);
-//   color("red") move_copies(flatten(egg)) circle(r=1, $fn=16);
+//   nurbs_interp_surface(surface, degree=3, col_wrap=true, row_wrap=true);
 // 
 // Example(3D,VPT=[10,-25,60],VPR=[100,0,30],VPD=425): A Mushroom
 //    shape = [ repeat([0,0,-1],8),
@@ -1780,7 +1773,6 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //            repeat([0,0,9*15],8)
 //            ];
 //    nurbs_interp_surface(shape, 3, normal1 = DOWN, normal2 = UP*0.8, col_wrap = true, row_edges = 7);
-//
 // 
 // Example(3D,Med,NoAxes,VPT=[0,0,75],VPR=[90,0,0],VPD=900): Controlling mushroom crown shape with normal2.
 //   shape = [ repeat([0,0,-1],8),
