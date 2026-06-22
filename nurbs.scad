@@ -637,11 +637,11 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //   extra_pts = Number of extra control points to add to provide additional freedom to control undesirable oscillations.  Default: 0
 //   smooth    = Smoothness criterion used with extra control points.  Set to 1 (minimize control-polygon length), 2 (minimize control-polygon bending) or 3 (minimize curve bending energy).   Default: 3
 //
-// Example(2D): 2D Clamped curve (default)
+// Example(2D): A NURBS curve where closed = false. (default)
 //   data = [[0,0], [10,30], [25,15], [40,35], [60,10], [80,25]];
 //   debug_nurbs_interp(data, 3);
 //
-// Example(2D,VPT=[40,12,0],VPD = 200): Closed curve - Do NOT repeat the first point at the end.
+// Example(2D,VPT=[40,12,0],VPD = 200): A NURBS curve where closed = true - Do NOT repeat the first point at the end.
 //   data = [[0,0], [30,50], [60,40], [80,10], [50,-20], [20,-10]];
 //   debug_nurbs_interp(data, 3, closed = true);
 //
@@ -668,7 +668,7 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //   stroke(curve, width=0.5);
 //   color("red") move_copies(data) circle(r=1, $fn=16);
 //
-// Example(2D,Med,VPT=[40,20,0],VPD=160): Endpoint tangent control - Specify start and/or end tangent vectors.  Each vector is automatically scaled by the total chord length; a unit vector produces natural arc-length speed.  Magnitude > 1 increases pull, < 1 weakens it.
+// Example(2D,Med,VPT=[40,20,0],VPD=160): Endpoint tangent control — Specify start and/or end tangent vectors.  Each vector is automatically scaled by the total chord length; a unit vector produces natural arc-length speed.  Magnitude > 1 increases pull, < 1 weakens it.
 //   data = [[0,0], [20,30], [50,25], [80,0]];
 //   // No tangent control (natural):
 //   color("lime") stroke(nurbs_curve(nurbs_interp(data, 3)), width=0.3);
@@ -699,7 +699,7 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1,
 //      deriv=[2*RIGHT,[0,1],undef,undef,undef,RIGHT]);
 //
-// Example(2D,Med): Uncontrolled ends, but derivitive control of the data points adjacent to the ends.
+// Example(2D,Med): Unconstrained ends, but derivitive control of the data points adjacent to the ends.
 //   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
 //   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1,
 //      deriv=[undef,[0,1],undef,undef,RIGHT,undef]);
@@ -737,11 +737,11 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //      curvature=[undef,-1/10,undef,0,undef,undef],
 //      extra_pts=2);
 //
-// Example(2D,Med):  The same data but for an uncontrolled closed NURBS curve.
+// Example(2D,Med):  The same data but for an unconstrained closed NURBS curve.
 //   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
 //   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1, closed = true);
 //
-// Example(2D,Med):  Addng extra points to control the oscillation
+// Example(2D,Med): Adding extra points gives a better behaved curve that doesn't cross itself.
 //   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
 //   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1, closed = true,
 //      extra_pts = 2);
@@ -761,7 +761,7 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1, closed = true,
 //      deriv=[undef,NAN,undef,undef,NAN,undef]);
 //
-// Example(2D,NoAxes): Keyhole Shape: Simply interpolating a NURBS through the data points yields disappointing results.
+// Example(2D,NoAxes): Keyhole Shape: A NURBS curve where closed = false, and the first and last data point the same.  But simply interpolating a NURBS through the data points yields disappointing results.
 //   data = [[0,0],[0,10],[-5,20],[5,30],[15,20],[10,10],[10,0],[0,0]];
 //   debug_nurbs_interp(data, degree=3, method="centripetal");
 //
