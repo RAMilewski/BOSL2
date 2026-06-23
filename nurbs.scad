@@ -21,23 +21,27 @@ _BOSL2_NURBS = is_undef(_BOSL2_STD) && (is_undef(BOSL2_NO_STD_WARNING) || !BOSL2
 // Section: NURBS Curves
 
 // Function: nurbs_curve()
-// Synopsis: Computes one or more points on a NURBS curve.
+// Synopsis: Computes one or more points (or derivatives) on a NURBS curve.
 // SynTags: Path
 // Topics: NURBS Curves
 // See Also: debug_nurbs()
 // Usage:
 //   pts = nurbs_curve(control, degree, splinesteps, [mult=], [weights=], [type=], [knots=]);
 //   pts = nurbs_curve(control, degree, u=, [mult=], [weights=], [type=], [knots=]);
+//   dpts = nurbs_curve(control, degree, splinesteps, deriv=d, ...);
+//   dpts = nurbs_curve(control, degree, u=, deriv=d, ...);
+//   list = nurbs_curve(control, degree, splinesteps, deriv=[d1,d2,...], ...);
+//   list = nurbs_curve(control, degree, u=, deriv=[d1,d2,...], ...);
 // Description:
-//   Compute the points specified by a NURBS curve.  You specify the NURBS by supplying the control points, knots and weights.  
+//   Compute the points specified by a NURBS curve.  You specify the NURBS by supplying the control points, knots and weights.
 //   Only the control points are required.  The knots and weights default to uniform, in which case you get a uniform B-spline.
-//   The length of `weights`, if given, must match the length of `control`.  
+//   The length of `weights`, if given, must match the length of `control`.
 //   You can specify endpoint behavior using the `type` parameter.  The default, "clamped", gives a curve which starts and
 //   ends at the first and last control points and moves in the tangent direction to the first and last control point segments.
 //   A "closed" curve is a one that starts where it ends.  An "open" spline is a generic curve that starts somewhere
 //   in the middle of the control points. The "open" curve is less common; you only need this if you are managing the
-//   knots and control points yourself to create your own clamped or closed curve, so avoid this type unless you know what you're doing.  
-//   Each of these types of curve require a different number of knots as described below.  
+//   knots and control points yourself to create your own clamped or closed curve, so avoid this type unless you know what you're doing.
+//   Each of these types of curve require a different number of knots as described below.
 //   .
 //   The control points are the most important control over the shape
 //   of the curve.  You must have at least degree+1 control points for clamped and open NURBS.  Don't confuse the degree of a
@@ -47,7 +51,7 @@ _BOSL2_NURBS = is_undef(_BOSL2_STD) && (is_undef(BOSL2_NO_STD_WARNING) || !BOSL2
 //   A NURBS or B-spline is a curve made from a moving average of several Bezier curves.  The knots specify when one Bezier fades
 //   away to be replaced by the next one.  The knot list is a non-decreasing list of values that you specify using two parameters,
 //   `knots` and `mult`.  In practice changing the knot values doesn't have a strong effect on the curve, so it usually suffices
-//   to use a uniform knot vector, which is the default.  The major exception to this is repeated knot values.  
+//   to use a uniform knot vector, which is the default.  The major exception to this is repeated knot values.
 //   At generic points in the NURBS, the curve is infinitely differentiable, but at a point that
 //   corresponds to a knot, a NURBS with degree $d$ will have a $(d-1)\mathrm{th}$ derivative that is continuous.
 //   However, if a value repeats in the knot vector that creates a knot with a multiplicity larger than 1, and each
@@ -60,7 +64,7 @@ _BOSL2_NURBS = is_undef(_BOSL2_STD) && (is_undef(BOSL2_NO_STD_WARNING) || !BOSL2
 //   the knots explicitly yourself.  The knots exist in the parameter space of the NURBS, but the knot values you give can cover any range;
 //   they will be scaled to correspond properly to the NURBS parameter space: regardless of the knot values you give, the domain of evaluation
 //   for u is always the interval [0,1], and it will be scaled to give the entire valid portion of the curve you have chosen.
-//   . 
+//   .
 //   For an open spline the number of knots must be `len(control)+degree+1`.  For a clamped spline the number of knots is `len(control)-degree+1`,
 //   and for a closed spline you need `len(control)+1` knots.  If you are using the default uniform knots then the way to
 //   ensure that you have the right number is to check that mult is not set or `sum(mult)` equals the correct value.
@@ -71,7 +75,16 @@ _BOSL2_NURBS = is_undef(_BOSL2_STD) && (is_undef(BOSL2_NO_STD_WARNING) || !BOSL2
 //   to the degree somewhere in your curve, which creates a corner at the knot, because it guarantees a sharp corner regardless
 //   of the number of points.  If you don't give `u` or `splinesteps` then `splinesteps=16` is used as the default evaluation.
 //   .
-//   Instead of providing separate parameters you can give a first parameter of the form of a NURBS parameter list: `[type, degree, control, knots, mult, weights]`.  
+//   Instead of providing separate parameters you can give a first parameter of the form of a NURBS parameter list: `[type, degree, control, knots, mult, weights]`.
+//   .
+//   **Derivatives:** The `deriv` parameter requests curve derivatives in addition to, or instead of, curve points.
+//   - `deriv=0` (default) — returns the curve points, same as without the parameter.  The output is a flat list of points, backward-compatible with code that does not use `deriv`.
+//   - `deriv=d` (positive integer) — returns a flat list of d-th derivative vectors at each evaluation point, one vector per point.
+//   - `deriv=[d1,d2,...]` (list of integers) — returns a list of lists.  Each element of the outer list corresponds to one entry of the `deriv` list, and contains the derivative vectors of that order at every evaluation point.  The output order matches the order of the `deriv` list, so `deriv=[0,1,2]` gives `[curve_pts, first_derivs, second_derivs]`.
+//   .
+//   The derivative order must be non-negative and cannot exceed the curve degree.  When `u` is a single scalar and `deriv` is a list, the return value is a list of single vectors (one per requested order) rather than a list of lists.
+//   .
+//   For unweighted B-splines the derivatives are computed exactly using the difference-control-point method (Piegl & Tiller, "The NURBS Book", Algorithm A3.3).  For rational NURBS (when `weights` is given) the geometric derivatives are obtained from the homogeneous B-spline derivatives via the quotient-rule formula (Piegl & Tiller, Eq. 4.8 / Algorithm A4.2).
 // Arguments:
 //   control = list of control points in any dimension or a NURBS parameter list
 //   degree = degree of NURBS
@@ -82,6 +95,7 @@ _BOSL2_NURBS = is_undef(_BOSL2_STD) && (is_undef(BOSL2_NO_STD_WARNING) || !BOSL2
 //   weights = vector whose length is the same as control giving weights at each control point.  Default: all 1
 //   type = One of "clamped", "closed" or "open" to define end point handling of the spline.  Default: "clamped"
 //   knots = List of knot values.  Default: uniform
+//   deriv = Integer or list of integers selecting which derivative orders to return.  0 = curve points.  Default: 0
 // Example(2D,NoAxes): Compute some points and draw a curve and also some specific points:
 //   control = [[5,0],[0,20],[33,43],[37,88],[60,62],[44,22],[77,44],[79,22],[44,3],[22,7]];
 //   curve = nurbs_curve(control,2,splinesteps=16);
@@ -188,7 +202,7 @@ _BOSL2_NURBS = is_undef(_BOSL2_STD) && (is_undef(BOSL2_NO_STD_WARNING) || !BOSL2
 //   w = [1,1/3,1/3,1,1/3,1/3];
 //   debug_nurbs(control, 3, splinesteps=16,weights=w,mult=[1,3,3],width=.1,size=.2,type="closed",show_knots=true);
 
-function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",knots) =
+function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",knots,deriv=0) =
     let(
         splinesteps = !any_defined([splinesteps,u]) ? 16 : splinesteps
     )
@@ -196,19 +210,40 @@ function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",
        assert(len(control)>=6, "Invalid NURBS parameter list")
        assert(num_defined([degree,mult,weights,knots])==0,
               "Cannot give degree, mult, weights or knots when you provide a NURBS parameter list")
-       nurbs_curve(control[2], control[1], splinesteps, u, weights=control[5],mult=control[4], type=control[0], knots=control[3])
+       nurbs_curve(control[2], control[1], splinesteps, u, weights=control[5],mult=control[4], type=control[0], knots=control[3], deriv=deriv)
   : assert(num_defined([splinesteps,u])==1, "Must define exactly one of u and splinesteps")
-    is_finite(u) ? nurbs_curve(control,degree,u=[u],mult=mult,weights=weights,knots=knots,type=type)[0]
+    is_finite(u) ?
+        let(r=nurbs_curve(control,degree,u=[u],mult=mult,weights=weights,knots=knots,type=type,deriv=deriv))
+        !is_list(deriv) ? r[0] : [for(d=r) d[0]]
   : assert(is_undef(splinesteps) || (is_int(splinesteps) && splinesteps>0), "splinesteps must be a positive integer")
     let(u=is_range(u) ? list(u) : u)                  
     assert(is_undef(u) || (is_vector(u) && min(u)>=0 && max(u)<=1), "u must be a list of points on the interval [0,1] or a range contained in that interval")
     is_def(weights) ? assert(is_vector(weights, len(control)), "Weights should be a vector whose length is the number of control points")
                       let(
-                           dim = len(control[0]),
-                           control = [for(i=idx(control)) [each control[i]*weights[i],weights[i]]],
-                           curve = nurbs_curve(control,degree,u=u,splinesteps=splinesteps, mult=mult, knots=knots, type=type)
+                           dim   = len(control[0]),
+                           hctrl = [for(i=idx(control)) [each control[i]*weights[i],weights[i]]]
                       )
-                      [for(pt=curve) select(pt,0,-2)/last(pt)]
+                      deriv == 0 ?
+                          let(curve = nurbs_curve(hctrl,degree,u=u,splinesteps=splinesteps, mult=mult, knots=knots, type=type))
+                          [for(pt=curve) select(pt,0,-2)/last(pt)]
+                      :
+                          assert(is_list(deriv) ? min(deriv)>=0 : deriv>=0, "Derivative orders must be non-negative")
+                          assert(is_list(deriv) ? max(deriv)<=degree : deriv<=degree,
+                                 str("Derivative order exceeds curve degree ",degree))
+                          let(
+                               max_d   = is_list(deriv) ? max(deriv) : deriv,
+                               hderivs = nurbs_curve(hctrl, degree, u=u, splinesteps=splinesteps,
+                                                     mult=mult, knots=knots, type=type,
+                                                     deriv=[for(k=[0:1:max_d]) k]),
+                               n_u     = len(hderivs[0]),
+                               geo_all = [for(i=[0:1:n_u-1])
+                                   _rational_derivs_at_u([for(k=[0:1:max_d]) hderivs[k][i]], dim, max_d)
+                               ]
+                          )
+                          is_list(deriv) ?
+                              [for(d=deriv) [for(i=[0:1:n_u-1]) geo_all[i][d]]]
+                          :
+                              [for(i=[0:1:n_u-1]) geo_all[i][deriv]]
   :
     let(
          uniform = is_undef(knots), 
@@ -236,6 +271,14 @@ function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",
                   assert(is_undef(mult) || type!="open" || sum(mult)==len(control)+degree+1,
                          str("For open spline knot count (sum of multiplicity vector) must be ",len(control)+degree+1," but is instead ",mult?sum(mult):0))
                   assert(uniform || is_increasing(knots), "Knot vector must be increasing"),
+         dummy_deriv = is_list(deriv) ?
+             assert(min(deriv)>=0, "Derivative orders must be non-negative")
+             assert(max(deriv)<=degree, str("Maximum derivative order ",max(deriv)," exceeds curve degree ",degree))
+             0
+           : deriv != 0 ?
+             assert(deriv>=0, "Derivative order must be non-negative")
+             assert(deriv<=degree, str("Derivative order ",deriv," exceeds curve degree ",degree))
+             0 : 0,
          control = type=="open" ? control
                  : type=="clamped" ? control  //concat(repeat(control[0], degree),control, repeat(last(control),degree))
                  : /*type=="closed"*/ concat(control, select(control,count(degree))),
@@ -293,8 +336,53 @@ function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",
                  : false,
          // The u list needs to be sorted for the algorithm to identify the knot spans, so sort it if necessary
          adjusted_u = reorder ? select(adjusted_u_orig,reorder[0]) : adjusted_u_orig,
-         nurbs_pts = 
-                   uniform?
+         nurbs_pts =
+                   deriv != 0 ?
+                       let(
+                           msum_d = uniform ? cumsum(mult) : undef,
+                           kmult_d = !uniform ? _calc_mult(knot) : undef,
+                           knotidx_list = uniform ?
+                               [for(uval=adjusted_u)
+                                  let(
+                                      mind = floor(uval*(len(mult)-1)),
+                                      knotidxR = msum_d[mind]-1
+                                  )
+                                  knotidxR<len(control) ? knotidxR : knotidxR - mult[mind]
+                               ]
+                           : [for(
+                                  kind=kmult_d[0]-1, uind=0, kmultind=1, output=undef, done=false
+                                     ;
+                                  !done
+                                     ;
+                                  output = (uind<len(adjusted_u) && approx(adjusted_u[uind],knot[kind]) && kind>kmult_d[0]-1
+                                            && ((kmultind>=len(kmult_d)-1 || kind+kmult_d[kmultind]>=len(control))))
+                                                            ?kind-kmult_d[kmultind-1]
+                                         : (uind<len(adjusted_u) && adjusted_u[uind]>=knot[kind] && adjusted_u[uind]>=knot[kind]
+                                             && adjusted_u[uind]<knot[kind+kmult_d[kmultind]]) ? kind
+                                         : undef,
+                                  done = uind==len(adjusted_u),
+                                  uind = is_def(output) ? uind+1 : uind,
+                                  inc_k = uind<len(adjusted_u) && adjusted_u[uind]>=knot[kind+kmult_d[kmultind]],
+                                  kind = inc_k ? kind+kmult_d[kmultind] : kind,
+                                  kmultind = inc_k ? kmultind+1 : kmultind
+                              )
+                              if (is_def(output)) output]
+                       )
+                       is_list(deriv) ?
+                           [for(d=deriv)
+                               [for(i=idx(adjusted_u))
+                                   _nurbs_eval_deriv(knot,
+                                                     select(control, knotidx_list[i]-degree, knotidx_list[i]),
+                                                     adjusted_u[i], knotidx_list[i], degree, d)
+                               ]
+                           ]
+                       : // integer deriv > 0: flat list of derivative vectors
+                         [for(i=idx(adjusted_u))
+                             _nurbs_eval_deriv(knot,
+                                               select(control, knotidx_list[i]-degree, knotidx_list[i]),
+                                               adjusted_u[i], knotidx_list[i], degree, deriv)
+                         ]
+                   : uniform?
                           let(
                               msum = cumsum(mult)
                           )
@@ -324,7 +412,7 @@ function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",
                                         : (uind<len(adjusted_u) && adjusted_u[uind]>=knot[kind] && adjusted_u[uind]>=knot[kind]
                                             && adjusted_u[uind]<knot[kind+kmult[kmultind]]) ? kind
                                         : undef,
-                                 done =  uind==len(adjusted_u), 
+                                 done =  uind==len(adjusted_u),
                                  uind = is_def(output) ? uind+1 : uind,
                                  inc_k = uind<len(adjusted_u) && adjusted_u[uind]>=knot[kind+kmult[kmultind]],
                                  kind = inc_k ? kind+kmult[kmultind] : kind,
@@ -336,7 +424,9 @@ function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",
                            _nurbs_pt(knot,slice(control, knotidx[i]-degree,knotidx[i]), adjusted_u[i], 1, degree, knotidx[i])
                         ]
          )
-         reorder ? select(nurbs_pts,reorder[1]) : nurbs_pts;
+         !reorder ? nurbs_pts
+         : !is_list(deriv) ? select(nurbs_pts,reorder[1])
+         : [for(dr=nurbs_pts) select(dr,reorder[1])];
 
 
        
@@ -353,6 +443,50 @@ function _nurbs_pt(knot, control, u, r, p, k) =
                     ]
     )
     _nurbs_pt(knot,ctrl_new,u,r+1,p,k);
+
+
+// Piegl & Tiller Algorithm A3.3: build difference control points for the d-th derivative.
+// Each call reduces the local control polygon by one point and increments d_so_far.
+// A zero knot span (repeated knot) produces a zero vector, giving zero derivative there.
+function _bspline_deriv_cpts(local_ctrl, knot, k, p, d_so_far, target_d) =
+    d_so_far >= target_d ? local_ctrl
+  : let(
+        step = d_so_far + 1,
+        coef = p - d_so_far,
+        new_cpts = [for(i=[0:1:len(local_ctrl)-2])
+                      let(denom = knot[k+i+1] - knot[k-p+i+step])
+                      denom == 0 ? 0*local_ctrl[0]
+                                 : coef * (local_ctrl[i+1] - local_ctrl[i]) / denom
+                   ]
+    )
+    _bspline_deriv_cpts(new_cpts, knot, k, p, step, target_d);
+
+
+// Evaluate the d-th derivative of a B-spline at u in knot span k.
+// Reduces to a degree-(p-d) B-spline evaluation on the difference control points.
+function _nurbs_eval_deriv(knot, local_ctrl, u, k, p, d) =
+    d == 0 ? _nurbs_pt(knot, local_ctrl, u, 1, p, k)
+  : _nurbs_pt(knot, _bspline_deriv_cpts(local_ctrl, knot, k, p, 0, d), u, 1, p-d, k);
+
+
+// Binomial coefficient C(n,k), computed recursively via Pascal's triangle.
+function _binom(n, k) =
+    k == 0 || k == n ? 1 : _binom(n-1, k-1) + _binom(n-1, k);
+
+
+// Piegl & Tiller Eq. 4.8 / Algorithm A4.2: convert homogeneous B-spline derivatives to
+// geometric NURBS derivatives at a single u.  Aw[k] is the k-th homogeneous derivative
+// (a dim+1 vector); returns [C^0, C^1, ..., C^max_d] in geometric (un-homogenised) space.
+function _rational_derivs_at_u(Aw, dim, max_d, k=0, Cders=[]) =
+    k > max_d ? Cders
+  : let(
+        w0   = last(Aw[0]),
+        Ak   = select(Aw[k], 0, dim-1),
+        corr = k == 0 ? repeat(0, dim)
+             : sum([for(j=[1:1:k]) _binom(k,j) * last(Aw[j]) * Cders[k-j]]),
+        Ck   = (Ak - corr) / w0
+    )
+    _rational_derivs_at_u(Aw, dim, max_d, k+1, [each Cders, Ck]);
 
 
 function _extend_knot_mult(mult, next, len) =
@@ -487,6 +621,9 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //   specify corners as described below).  
 //   If you instead duplicate the closing point and set `closed=false` then the
 //   result will have a corner at the closing point. 
+//   .  
+//   Inserting a corner converts the output from a closed NURBS to to a clamped NURBS.  Adding
+//   more than one corner converts the output to a piecewise sequence of clamped NURBS. 
 //   .
 //   **Parameterization** (`method=`)
 //   .
@@ -751,12 +888,12 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1, closed = true,
 //      deriv=[[0,1]/4, undef, undef, undef, undef, [0,-1]/3]);
 //
-// Example(2D,Med): A closed NURBS curve with a derivative at pt 1, and a corner at pt 4.
+// Example(2D,Med): A NURBS curve with a derivative at pt 1, and a corner at pt 4. While closed=true, adding the corner converts the NURBS from closed to clamped.
 //   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
 //   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1, closed = true,
 //      deriv=[undef,[0,1],undef,undef,NAN,undef]);
 //
-// Example(2D,Med): The same closed curve with corners at points 1 and 4.
+// Example(2D,Med): The same input data but with corners at points 1 and 4. This yields two connected clamped NURBS.
 //   data = [[0,0], [20,30], [30,90], [36,111], [50,25], [80,0]];
 //   debug_nurbs_interp(data, degree=3, splinesteps=32, width=2, data_size=1, closed = true,
 //      deriv=[undef,NAN,undef,undef,NAN,undef]);
@@ -822,7 +959,7 @@ module debug_nurbs(control,degree,splinesteps=16,width=1, size, mult,weights,typ
 //   path = nurbs_curve(nurbs_interp(data, 3, closed = false, method = "centripetal", corners=[4]));
 //   right(75) stroke(path, closed = true);
 //
-// Example(2D,NoAxes,Med,VPT=[37.5,0,0],VPD=275): The same data but with a closed NURBS. Note that we do not repeat the starting point for a closed NURBS but instead insert a corner there.
+// Example(2D,NoAxes,Med,VPT=[37.5,0,0],VPD=275): We can get the same result by dropping the last data point and setting closed=true. A closed=true case with a single corner is exactly equivalent to a closed=false case where the single corner occurs at coincident endpoints.
 //   data = [[0,10], [25,20], [30,0], [20,-15], [0,-30], [-20,-15], [-30,0], [-25,20]];
 //   debug_nurbs_interp(data, 3, closed = true, method = "centripetal", corners=[0,4]);
 //   path = nurbs_curve(nurbs_interp(data, 3, closed = true, method = "centripetal", corners = [0,4]));
@@ -1601,7 +1738,7 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //   col_wrap  = If true, smoothly connect the first column to the last column.  Default: false
 //   extra_pts = Scalar or 2-vector giving the number of extra points in the two directions.  Default: `0`
 //   smooth    = Scalar or 2-vector giving the smoothness metric for extra points in the two directions: `1` (min polygon length), `2` (min bending), `3` (min bending energy).   Default: `3`
-//   flat_edges = 4-element list `[first_row, last_row, first_col, last_col]` of derivative scales at the four coplanar boundary edges.  Each entry is a scalar or per-point list; `undef` leaves that edge unconstrained.  Shorthand: `flat_edges=s` → `[s,s,s,s]`.  Requires `row_wrap=false, col_wrap=false`. 
+//   flat_edges = Nonzero scalar `s` (expands to `[s,s,s,s]`) or 4-element list `[first_row, last_row, first_col, last_col]` of derivative scales at the four coplanar boundary edges.  Each entry is a nonzero scalar, a per-point list of nonzero scalars, or `undef` (leaves that edge unconstrained).  Zero is not permitted.  Requires `row_wrap=false, col_wrap=false`.
 //   normal1   = Surface normal at the first degenerate boundary edge (mixed wrap surface only). 
 //   normal2   = Surface normal at the second degenerate boundary edge (mixed wrap surface only).
 //   flat_end1 = Inward derivative scale at the first coplanar non-degenerate boundary edge (mixed wrap surface).  Scalar or per-point list. 
@@ -1658,7 +1795,7 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //       for (row = data) for (pt = row)
 //           translate(pt) sphere(r=1, $fn=16);
 //
-// Example(3D,VPD=320,VPT=[8,10,13]): Basic surface interpolation with flat edges, using the same derivitive for all four edges
+// Example(3D,VPD=320,VPT=[8,10,13]): Basic surface interpolation with flat edges.  flat_edges creates derivatives in the plane defined by the four edges, which must be coplanar, and that this would make the shape mate to a plane.
 //   surface = [
 //   [[-50, 50, 0], [-16, 50,  0], [ 16, 50,  0], [50, 50,  0], [80, 50, 0]],
 //   [[-50, 25, 0], [-16, 25, 40], [ 16, 25, 30], [50, 25, 20], [80, 25, 0]],
@@ -1666,7 +1803,18 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //   [[-50,-25, 0], [-16,-25, 35], [ 16,-25, 40], [50,-25, 15], [80,-25, 0]],
 //   [[-50,-50, 0], [-16,-50,  0], [ 16,-50,  0], [50,-50,  0], [80,-50, 0]],
 //   ];
-//   nurbs_interp_surface(surface,3, flat_edges = 0);
+//   nurbs_interp_surface(surface,3, flat_edges = 1);
+//
+// Example(3D,VPD=320,VPT=[8,10,13]): Flat edges enables the NURBS surface to mate neatly with the top surface of a cuboid.
+//   surface = [
+//   [[-50, 50, 0], [-16, 50,  0], [ 16, 50,  0], [50, 50,  0], [80, 50, 0]],
+//   [[-50, 25, 0], [-16, 25, 40], [ 16, 25, 30], [50, 25, 20], [80, 25, 0]],
+//   [[-50,  0, 0], [-16,  0, 40], [ 16,  0, 30], [50,  0, 30], [80,  0, 0]],
+//   [[-50,-25, 0], [-16,-25, 35], [ 16,-25, 40], [50,-25, 15], [80,-25, 0]],
+//   [[-50,-50, 0], [-16,-50,  0], [ 16,-50,  0], [50,-50,  0], [80,-50, 0]],
+//   ];
+//   color_this("skyblue")cuboid([130,100,20])
+//      align(TOP,LEFT) nurbs_interp_surface(surface,3, flat_edges = 0.1);   
 //
 // Example(3D,VPD=320,VPT=[8,10,13]): Different derivitives for each edge.
 //   // Edge specification is [first row, last row, first col, last col] 
@@ -1677,9 +1825,20 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //   [[-50,-25, 0], [-16,-25, 35], [ 16,-25, 40], [50,-25, 15], [80,-25, 0]],
 //   [[-50,-50, 0], [-16,-50,  0], [ 16,-50,  0], [50,-50,  0], [80,-50, 0]],
 //   ];
-//   nurbs_interp_surface(surface,3, flat_edges = [1,0,2,1]);
+//   nurbs_interp_surface(surface,3, flat_edges = [1,0.5,2,1]);
 //
-// Example(3D,VPD=320,VPT=[8,10,13]): Constraining only column edges.
+// Example(3D,VPD=320,VPT=[8,10,13]): Setting a different derivative for each point along an edge.
+//   // Edge specification is [first row, last row, first col, last col] 
+//   surface = [
+//   [[-50, 50, 0], [-16, 50,  0], [ 16, 50,  0], [50, 50,  0], [80, 50, 0]],
+//   [[-50, 25, 0], [-16, 25, 40], [ 16, 25, 30], [50, 25, 20], [80, 25, 0]],
+//   [[-50,  0, 0], [-16,  0, 40], [ 16,  0, 30], [50,  0, 30], [80,  0, 0]],
+//   [[-50,-25, 0], [-16,-25, 35], [ 16,-25, 40], [50,-25, 15], [80,-25, 0]],
+//   [[-50,-50, 0], [-16,-50,  0], [ 16,-50,  0], [50,-50,  0], [80,-50, 0]],
+//   ];
+//   nurbs_interp_surface(surface,3, flat_edges = [1,[0.5,1,4,1,0.5],1,1]);
+//
+// Example(3D,VPD=320,VPT=[8,10,13]): Setting an edge to undef leaves it unconstrained.
 //   surface = [
 //   [[-50, 50, 0], [-16, 50,  0], [ 16, 50,  0], [50, 50,  0], [80, 50, 0]],
 //   [[-50, 25, 0], [-16, 25, 40], [ 16, 25, 30], [50, 25, 20], [80, 25, 0]],
@@ -1730,29 +1889,29 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //   nurbs_interp_surface(surface,3, row_edges = 3);
 //
 //
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): Rotated star cross section surface closed in one direction.
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 300): Rotated star cross section surface closed in one direction.
 //   surface = [ for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)), ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true);
 // 
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): We can close the ends of mixed surfaces using caps.  
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 300): We can close the ends of mixed surfaces using caps.  
 //   surface = [ for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)), ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true, caps = true);
 //
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): Instead of caps we can use degenerate end rows to close the shape.
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 300): Instead of caps we can use degenerate end rows to close the shape.
 //   surface = [ repeat([0,0,-15],14),
 //      for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)),
 //      repeat([0,0,5*15],14)
 //   ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true);
 //   
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): Controlling the end shape with normals.
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 300): Controlling the end shape with normals.
 //   surface = [ repeat([0,0,-15],14),
 //      for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)),
 //      repeat([0,0,5*15],14)
 //   ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true, normal1 = DOWN*4, normal2 = UP*2);
 //   
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 320): A more extreme example of controlling end shape with normals.
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 300): A more extreme example of controlling end shape with normals.
 //   surface = [ repeat([0,0,-15],14),
 //      for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)),
 //      repeat([0,0,5*15],14)
@@ -2089,6 +2248,9 @@ function nurbs_interp_surface(points, degree, method="centripetal",
            str("nurbs_interp_surface: flat_edges[2] scale list must have ", n_rows, " entries (one per row)"))
     assert(!has_feev || !is_list(fe_ev) || len(fe_ev) == n_rows,
            str("nurbs_interp_surface: flat_edges[3] scale list must have ", n_rows, " entries (one per row)"))
+    assert(!has_fe ||
+           !in_list(0, [for(e=fe_norm) if(!is_undef(e)) each (is_list(e) ? e : [e])]),
+           "nurbs_interp_surface: flat_edges scale values must be non-zero (use undef to leave an edge unconstrained)")
     // Edge (C0) validation.
     assert(!has_ue || !row_wrap,
            "nurbs_interp_surface: row_edges requires row_wrap=false")
