@@ -1562,7 +1562,7 @@ module edge_profile_asym(
              assert(is_cuboid, "Parent must be a cuboid")      
              assert(in_list(corner_type, ["none", "round", "chamfer", "sharp"]))
              assert(is_bool(flip))
-             assert((is_number(size) && size>0) || (is_vector(size,2) && all_positive(size)),
+             assert((is_num(size) && size>0) || (is_vector(size,2) && all_positive(size)),
                     "size must be a positive number of 2-vector");
     size = force_list(size,2);
     edges = _edges(edges, except=except);
