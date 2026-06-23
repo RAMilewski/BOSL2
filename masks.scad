@@ -1420,7 +1420,7 @@ module edge_profile_asym(
     edges=EDGES_ALL, except=[],
     excess=0.01, convexity=10,
     flip=false, corner_type="none",
-    size=[0,0]
+    size=undef
 ) {
     function _corner_orientation(pos,pvec) =
         let(
@@ -1562,9 +1562,10 @@ module edge_profile_asym(
              assert(is_cuboid, "Parent must be a cuboid")      
              assert(in_list(corner_type, ["none", "round", "chamfer", "sharp"]))
              assert(is_bool(flip))
-             assert((is_num(size) && size>0) || (is_vector(size,2) && all_positive(size)),
+             assert(is_undef(size) || (is_num(size) && size>0) || (is_vector(size,2) && all_positive(size)),
                     "size must be a positive number of 2-vector");
-    size = force_list(size,2);
+    size = is_undef(size) ? [0,0] : force_list(size,2);
+    
     edges = _edges(edges, except=except);
     vecs = [
         for (i = [0:3], axis=[0:2])
@@ -1599,11 +1600,11 @@ module edge_profile_asym(
                 $profile_type = "corner";
                 position(pos) {
                     multmatrix(mirT) {
-                        if (vp1.x == vp2.x && size.y > 0) {
+                        if (vp1.x == vp2.x && size.x>0) {
                             zflip() {
                                 if (corner_type=="chamfer") {
                                     fn = $fn;
-                                    move([size.y,size.y]) {
+                                    move(size) {
                                         rotate_extrude(angle=90, $fn=4)
                                             left_half(planar=true, $fn=fn)
                                                 zrot(-90) fwd(size.y) children();
@@ -1616,7 +1617,7 @@ module edge_profile_asym(
                                                     square([size.x+0.01, size.y+0.01]);
                                     }
                                 } else if (corner_type=="round") {
-                                    move([size.y,size.y]) {
+                                    move(size) {
                                         rotate_extrude(angle=90)
                                             left_half(planar=true)
                                                 zrot(-90) fwd(size.y) children();
