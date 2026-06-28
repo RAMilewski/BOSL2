@@ -368,19 +368,24 @@ function nurbs_curve(control,degree,splinesteps,u,  mult,weights,type="clamped",
                               )
                               if (is_def(output)) output]
                        )
+                       // Chain rule: t = bound[0] + (bound[1]-bound[0])*u, so
+                       // d^k/du^k = (bound[1]-bound[0])^k * d^k/dt^k.
+                       // For clamped, bound=undef and the mapping is identity (no scaling needed).
                        is_list(deriv) ?
                            [for(d=deriv)
+                               let(scale = is_undef(bound) || d==0 ? 1 : pow(bound[1]-bound[0], d))
                                [for(i=idx(adjusted_u))
-                                   _nurbs_eval_deriv(knot,
-                                                     select(control, knotidx_list[i]-degree, knotidx_list[i]),
-                                                     adjusted_u[i], knotidx_list[i], degree, d)
+                                   scale * _nurbs_eval_deriv(knot,
+                                                             select(control, knotidx_list[i]-degree, knotidx_list[i]),
+                                                             adjusted_u[i], knotidx_list[i], degree, d)
                                ]
                            ]
                        : // integer deriv > 0: flat list of derivative vectors
+                         let(scale = is_undef(bound) ? 1 : pow(bound[1]-bound[0], deriv))
                          [for(i=idx(adjusted_u))
-                             _nurbs_eval_deriv(knot,
-                                               select(control, knotidx_list[i]-degree, knotidx_list[i]),
-                                               adjusted_u[i], knotidx_list[i], degree, deriv)
+                             scale * _nurbs_eval_deriv(knot,
+                                                       select(control, knotidx_list[i]-degree, knotidx_list[i]),
+                                                       adjusted_u[i], knotidx_list[i], degree, deriv)
                          ]
                    : uniform?
                           let(
@@ -1805,7 +1810,7 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //   ];
 //   nurbs_interp_surface(surface,3, flat_edges = 1);
 //
-// Example(3D,VPD=320,VPT=[8,10,13]): Flat edges enables the NURBS surface to mate neatly with the top surface of a cuboid.
+// Example(3D,VPD=400,VPT=[8,10,13]): Flat edges enables the NURBS surface to mate smoothly with the top surface of a cuboid.
 //   surface = [
 //   [[-50, 50, 0], [-16, 50,  0], [ 16, 50,  0], [50, 50,  0], [80, 50, 0]],
 //   [[-50, 25, 0], [-16, 25, 40], [ 16, 25, 30], [50, 25, 20], [80, 25, 0]],
@@ -1813,8 +1818,8 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //   [[-50,-25, 0], [-16,-25, 35], [ 16,-25, 40], [50,-25, 15], [80,-25, 0]],
 //   [[-50,-50, 0], [-16,-50,  0], [ 16,-50,  0], [50,-50,  0], [80,-50, 0]],
 //   ];
-//   color_this("skyblue")cuboid([130,100,20])
-//      align(TOP,LEFT) nurbs_interp_surface(surface,3, flat_edges = 0.1);   
+//   color_this("skyblue")cuboid([160,130,20])
+//      align(TOP) nurbs_interp_surface(surface,3, flat_edges = 1);   
 //
 // Example(3D,VPD=320,VPT=[8,10,13]): Different derivitives for each edge.
 //   // Edge specification is [first row, last row, first col, last col] 
@@ -1868,7 +1873,7 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //   ];
 //   nurbs_interp_surface(surface,3, flat_edges = [undef,[3,2,4,2,3],undef,undef]);
 //
-// Example(3D,VPD=320,VPT=[8,10,13]): Corner seam in column 3
+// Example(3D,VPD=320,VPT=[8,10,13],VPR=[70,1,10]): Corner seam in column 2
 //   surface = [
 //   [[-50, 50, 0], [-16, 50,  0], [ 16, 50,  0], [50, 50,  0], [80, 50, 0]],
 //   [[-50, 25, 0], [-16, 25, 40], [ 16, 25, 30], [50, 25, 20], [80, 25, 0]],
@@ -1876,9 +1881,9 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //   [[-50,-25, 0], [-16,-25, 35], [ 16,-25, 40], [50,-25, 15], [80,-25, 0]],
 //   [[-50,-50, 0], [-16,-50,  0], [ 16,-50,  0], [50,-50,  0], [80,-50, 0]],
 //   ];
-//   nurbs_interp_surface(surface,3, col_edges = 3);
+//   nurbs_interp_surface(surface,3, col_edges = 2);
 //
-// Example(3D,VPD=320,VPT=[8,10,13]): Corner seam in row 3
+// Example(3D,VPD=320,VPT=[8,10,13],VPR= [72,1,62): Corner seam in row 2
 //   surface = [
 //   [[-50, 50, 0], [-16, 50,  0], [ 16, 50,  0], [50, 50,  0], [80, 50, 0]],
 //   [[-50, 25, 0], [-16, 25, 40], [ 16, 25, 30], [50, 25, 20], [80, 25, 0]],
@@ -1886,39 +1891,39 @@ module nurbs_vnf(patch, degree, splinesteps=16, weights, type="clamped", mult, k
 //   [[-50,-25, 0], [-16,-25, 35], [ 16,-25, 40], [50,-25, 15], [80,-25, 0]],
 //   [[-50,-50, 0], [-16,-50,  0], [ 16,-50,  0], [50,-50,  0], [80,-50, 0]],
 //   ];
-//   nurbs_interp_surface(surface,3, row_edges = 3);
+//   nurbs_interp_surface(surface,3, row_edges = 2);
 //
 //
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 300): Rotated star cross section surface closed in one direction.
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,30],VPD = 220): Rotated star cross section surface closed in one direction.
 //   surface = [ for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)), ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true);
 // 
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 300): We can close the ends of mixed surfaces using caps.  
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,30],VPD = 220): We can close the ends of mixed surfaces using caps.  
 //   surface = [ for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)), ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true, caps = true);
 //
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 300): Instead of caps we can use degenerate end rows to close the shape.
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,30],VPD = 250): Instead of caps we can use degenerate end rows to close the shape.
 //   surface = [ repeat([0,0,-15],14),
 //      for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)),
 //      repeat([0,0,5*15],14)
 //   ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true);
 //   
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 300): Controlling the end shape with normals.
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,30],VPD = 250): Controlling the end shape with normals.
 //   surface = [ repeat([0,0,-15],14),
 //      for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)),
 //      repeat([0,0,5*15],14)
 //   ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true, normal1 = DOWN*4, normal2 = UP*2);
 //   
-// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,20],VPD = 300): A more extreme example of controlling end shape with normals.
+// Example(3D,Med,VPR=[80,0,45],VPT=[0,0,30],VPD = 250): A more extreme example of controlling end shape with normals.
 //   surface = [ repeat([0,0,-15],14),
 //      for(i=[0:4]) zrot(i*15,path3d(star(or=15,ir=13, n=7),i*15)),
 //      repeat([0,0,5*15],14)
 //   ];
 //   nurbs_interp_surface(surface, 3, col_wrap = true, normal1 = DOWN*4, normal2 = 5*UP+2*RIGHT);
 //
-// Example(3D,Med,VPR=[60,0,45],VPT=[0,0,10],VPD = 150): Setting both col_wrap and row_wrap to true, yields a torus.
+// Example(3D,Med,VPR=[60,0,45],VPT=[0,0,10],VPD = 140): Setting both col_wrap and row_wrap to true, yields a torus.
 //   surface = [
 //     for(i=[0:8]) zrot(i*15,path3d(star(or=25,ir=22, n=11),i*2)),
 //   ];
