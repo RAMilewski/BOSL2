@@ -2957,16 +2957,17 @@ module zcyl(
 //   You may mix signs, chamfers and roundings, but cannot give a nonzero chamfer and rounding for the same edge.
 //   These parameters do not treat the curved rims at the cylinder ends.
 //   .
-//   Rounding and chamfer sizes are joint lengths: the straight distance along the flat face and the matching
-//   arc length along the curved surface.  For negative values the flat endpoint moves outward, but the circle
-//   endpoint still moves along the retained arc.  End treatments use equal straight distances on their two faces.
-//   Positive long-edge joints share the flat-face width; joints of either sign share the available arc length.
-//   Positive end joints share the height and individually cannot exceed the thickness.  Joints may meet exactly,
-//   provided the construction is valid and the shape does not collapse.  An exterior long-edge chamfer that crosses
-//   the circle is an error; reduce its magnitude.
+//   Rounding and chamfer sizes are joint lengths: the path length across the two surfaces where the rounding/chamfer is placed.
+//   Edge treatments on the vertical edges cannot have a joint length larger than the width of the flat face.
+//   Edge treatments on the flat ends cannot be larger than the thickness.  The only other requirement is that they
+//   joints can't interfere with each other.  When you use very large joint sizes this may produce odd effects; for example,
+//   it means you can , so a huge joint on one side is only possible if the other side can be You can 
+//   you can clip off almost the entire semicircle using a chamfer, leaving only a thin sliver.  Some exterior (negative) chamfer configurations
+//   lead to chamfers that cross the circle.  When this happens you need to reduce the chamfer size. 
 //   .
-//   The roundings are continuous curvature fourth degree beziers, but unlike the continuous curvature roundings elsewhere in the library,
-//   these roundings mate with a circle at once end, which means they have nonzero curvature at that end of the joint.
+//   The roundings connecting to the circular surface are continuous curvature fourth degree beziers,
+//   but unlike the continuous curvature roundings elsewhere in the library,
+//   these roundings mate with a circle at onc end, which means they have nonzero curvature at that end of the joint.
 //   This requires a different bezier definition, which means that the `k` parameter behaves somewhat differently, but
 //   it is still between 0 and 1 and still controls the shape in the same general manner, with small `k` values giving pointier roundings
 //   that hug the base curve, and large `k` giving blunter roundings.  The default is `k=0.75`.  
@@ -3072,19 +3073,22 @@ module zcyl(
 //   $fa = 3;$fs = 0.2;
 //   hemicyl(24, 12, rounding=[-3,2], end_rounding=[1,-2]);
 // Example(3D,VPR=[65,0,315]): A top rounding uses the entire height.
+//   $fa = 3;$fs = 0.2;  
 //   hemicyl(8, 12, end_rounding=[0,8]);
 // Example(3D,VPR=[65,0,315]): Bottom and top roundings meet, using the entire height.
+//   $fa = 3;$fs = 0.2;  
 //   hemicyl(20, 12, end_rounding=[8,12]);
 // Example(3D): Combined roundings that use more that half the space
 //   $fa = 3;$fs = 0.2;
 //   hemicyl(8, 12, rounding=[0,17], end_rounding=[0,8]);
-// Example(3D,VPR=[65,0,315]): Increasing bluntness, from left to right: k=0, 0.5, 0.75 and 1.  The last has degenerate endpoint handles.
+// Example(3D,VPR=[65,0,315]): Small `k` gives a sharper roundover and large `k` a blunter one for the same size
+//   $fa = 1;$fs = 0.5;
 //   ks = [0.25,0.95];
 //   for (i=[0:1])
 //       right(30*(i-1/2))
 //           hemicyl(24, 12, rounding=5, end_rounding=3, k=ks[i]);
-// Example(3D,VPR=[65,0,315]): Extra material extends LEFT without moving the nominal flat-face anchor. 
-//   hemicyl(24, 12, rounding=-3, extra=0, anchor=LEFT);
+// Example(3D): Extra material extends LEFT without moving the nominal flat-face anchor. 
+//   hemicyl(24, 12, rounding=-3, extra=3, anchor=LEFT);
 // Example(3D): Subtracting a through groove.  Negative rounding eases the mouth; `extra` avoids a coincident face at the block's top.
 //   diff()
 //       cuboid([40,40,20])
@@ -3207,10 +3211,10 @@ module hemicyl(h, r,
 }
 
 
-// Function: _hemicyl_end_corner()
-// Description:
-//   Curve replacing the sharp corner of the flat face at one end of the extrusion, in the XZ plane (as x,y).
-//   Returns a curve from the point on the flat plane to the point on the end face, or the corner alone if the size is zero.
+/// Function: _hemicyl_end_corner()
+/// Description:
+///   Curve replacing the sharp corner of the flat face at one end of the extrusion, in the XZ plane (as x,y).
+///   Returns a curve from the point on the flat plane to the point on the end face, or the corner alone if the size is zero.
 function _hemicyl_end_corner(flat_x, edge_z, size, use_chamfer, smoothness) =
     let(
         z_sign = sign(edge_z),
@@ -3229,10 +3233,10 @@ function _hemicyl_end_corner(flat_x, edge_z, size, use_chamfer, smoothness) =
         splinesteps=max(4,ceil(segs(abs(size))/4)));
 
 
-// Function: _hemicyl_end_profile()
-// Description:
-//   Polygon in the XZ plane (as x,y) that is extruded along Y and intersected with the side sweep to make the end roundings.
-//   The `bottom` and `top` arguments are lists `[size, use_chamfer]`.
+/// Function: _hemicyl_end_profile()
+/// Description:
+///   Polygon in the XZ plane (as x,y) that is extruded along Y and intersected with the side sweep to make the end roundings.
+///   The `bottom` and `top` arguments are lists `[size, use_chamfer]`.
 function _hemicyl_end_profile(flat_x, x_max, length, bottom, top, extra, smoothness) =
     let(
         bottom_curve = _hemicyl_end_corner(flat_x, -length/2, bottom[0], bottom[1], smoothness),
